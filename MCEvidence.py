@@ -28,6 +28,7 @@ import io
 
 import tempfile 
 import os
+import glob
 import sys
 import math
 import numpy as np
@@ -38,7 +39,10 @@ from sklearn.neighbors import NearestNeighbors, DistanceMetric
 import scipy.special as sp
 from numpy.linalg import inv
 from numpy.linalg import det
+import logging
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 __author__ = "Yabebal Fantaye"
 __email__ = "yabi@aims.ac.za"
@@ -47,6 +51,10 @@ __version__ = "0.1.1"
 __status__ = "Development"
 
 try:
+    '''
+    If getdist is installed, use that to reach chains.
+    Otherwise, use the minimal chain reader class implemented below.
+    '''    
     from getdist import MCSamples, chains
     from getdist import plots, IniFile
     import getdist as gd
@@ -54,28 +62,33 @@ try:
     #====================================
     #      Getdist wrapper
     #====================================    
-    class samples2gdist(object):
+    class MCSamples(object):
         #Ref:
         #http://getdist.readthedocs.io/en/latest/plot_gallery.html
 
-        def __init__(self,str_or_dict,trueval=None,
+        def __init__(self,str_or_dict,trueval=None,debug=False,
                     names=None,labels=None,px='x',**kwargs):
             #Get the getdist MCSamples objects for the samples, specifying same parameter
             #names and labels; if not specified weights are assumed to all be unity
 
+            if debug:
+                logging.basicConfig(level=logging.DEBUG)
+            self.logger = logging.getLogger(__name__)
+
             if isinstance(str_or_dict,str):
                 
                 fileroot=str_or_dict
-                print('samples2gdist: string passed. Loading chain from '+fileroot)                
+                self.logger.info('samples2gdist: string passed. Loading chain from '+fileroot)                
                 self.load_from_file(fileroot,**kwargs)
                 
             elif isinstance(str_or_dict,dict):
                 
                 d=str_or_dict
-                chains=d['chains']
+                chain=d['samples']
                 loglikes=d['loglikes']
-                weight=d['weight'] if 'weight' in d.keys() else np.ones(len(loglikes))
-
+                weight=d['weights'] if 'weights' in d.keys() else np.ones(len(loglikes))
+                ndim=chain.shape[1]
+                
                 if names is None:
                     names = ["%s%s"%('p',i) for i in range(ndim)]
                 if labels is None:
@@ -85,14 +98,19 @@ try:
                 self.labels=labels
                 self.trueval=trueval
                 self.samples = gd.MCSamples(samples=chain,
-                                            loglikes=lnprob,
-                                            weight=weight,
+                                            loglikes=loglikes,
+                                            weights=weight,
                                             names = names,
                                             labels = labels)
-            else:               
-               print('first argument to samples2getdist should be a string or dict.')
-               print('Passed first argument type is: ',type(str_or_dict))
-               
+            else:
+               self.logger.info('Passed first argument type is: ',type(str_or_dict))                
+               self.logger.error('first argument to samples2getdist should be a string or dict.')
+               raise
+
+            self.nparamMC=self.samples.paramNames.numNonDerived()
+
+        def get_shape(self):
+            return self.samples.samples.shape
 
         def triangle(self,**kwargs):
             #Triangle plot
@@ -134,12 +152,24 @@ try:
                 ncorr=max(1,int(self.samples.getCorrelationLength(nminwin)))
             else:
                 ncorr=nthin
-            print('ncorr=',ncorr)
+            self.logger.info('Acutocorrelation Length: ncorr=',ncorr)
             try:
                 self.samples.thin(ncorr)
             except:
-                print('Thinning not possible. Weight must be interger to apply thinning.')
+                self.logger.info('Thinning not possible. Weight must be interger to apply thinning.')
 
+        def thin_poisson(self,thinfrac=0.1,nthin=None):
+            try:
+                w=self.samples.weights*thinfrac                
+                thin_ix=np.where(w>0)
+                self.samples.setSamples(self.samples.samples[thin_ix, :],
+                                        loglikes=self.samples.loglikes[thin_ix])
+            except:
+                self.logger.info('Poisson based thinning not possible.')
+
+        def removeBurn(self,remove=0.2):
+            self.samples.removeBurn(remove)
+            
         def arrays(self):            
             s=self.samples.samples
             lnp=-self.samples.loglikes
@@ -152,24 +182,110 @@ try:
             print(self.samples.getTable().tableTex())
             print(self.samples.getInlineLatex('x1',limit=1))
 
-except:    
-    print('getdist is not installed. You can not use the wrapper: samples2gdist')                      
-    raise
+except:
+    
+    '''
+    getdist is not installed
+    use a simple chain reader
+    '''
+    class MCSamples(object):
 
+        def __init__(self,str_or_dict,trueval=None,debug=False,
+                    names=None,labels=None,px='x',**kwargs):
+            #Get the getdist MCSamples objects for the samples, specifying same parameter
+            #names and labels; if not specified weights are assumed to all be unity
 
+            if debug:
+                logging.basicConfig(level=logging.DEBUG)
+            self.logger = logging.getLogger(__name__)
+                
+            if isinstance(str_or_dict,str):                
+                fileroot=str_or_dict
+                self.logger.info('Loading chain from '+fileroot)                
+                d = self.load_from_file(fileroot,**kwargs)                
+            elif isinstance(str_or_dict,dict):                
+                d=str_or_dict
+            else:
+               self.logger.info('Passed first argument type is: ',type(str_or_dict))                
+               self.logger.error('first argument to samples2getdist should be a string or dict.')
+               raise
+           
+            self.samples=d['samples']
+            self.loglikes=d['loglikes']
+            self.weights=d['weights'] if 'weights' in d.keys() else np.ones(len(self.loglikes))
+            ndim=self.samples.shape()[1]
+
+            if names is None:
+                names = ["%s%s"%('p',i) for i in range(ndim)]
+            if labels is None:
+                labels =  ["%s_%s"%(px,i) for i in range(ndim)]
+
+            self.names=names
+            self.labels=labels
+            self.trueval=trueval
+            self.nparamMC=self.get_shape()[1]
+            
+        def get_shape(self):            
+            return self.samples.shape
+
+        def load_from_file(self,fname,**kwargs):
+            try:
+                DataTable=np.loadtxt(fname)
+            except:
+                d=[]
+                for glob.glob(fname+'*'):
+                    d.append(np.loadtxt(fname))
+                DataTable=np.concatenate(d)
+                
+            chain_dict={}
+            chain_dict['samples']=np.zeros((len(DataTable), ndim))
+            chain_dict['weights']  =  DataTable[:,0]
+            chain_dict['loglikes'] = DataTable[:,1]
+            chain_dict['samples'][:,0:ndim] =  DataTable[:,2:2+ndim]
+
+            return chain_dict
+
+        def thin_poisson(self,thinfrac=0.1,nthin=None):
+            try:
+                w=self.weights*thinfrac                
+                thin_ix=np.where(w>0)
+                self.samples=self.samples[thin_ix, :]
+                self.loglikes=self.loglikes[thin_ix]
+                self.weights=self.weights[thin_ix]                
+            except:
+                self.logger.info('Thinning not possible.')
+
+        def removeBurn(self,remove=0):
+            nstart=remove
+            if remove<1:
+                self.logger.info('burn-in: Removing {} % of the chain'.format(remove))                
+                nstart=int(len(self.loglikes)*remove)
+            else:
+                self.logger.info('burn-in: Removing the first {} rows of the chain'.format(remove))
+                
+            self.samples=self.samples[nstart:, :]
+            self.loglikes=self.loglikes[nstart:]
+            self.weights=self.weights[nstart:]                
+
+        def arrays(self):            
+            s=self.samples
+            lnp=-self.loglikes
+            w=self.weights
+            return s, lnp, w
+           
 #============================================================
 #======  Here starts the main Evidence calculation code =====
 #============================================================
 
 class MCEvidence(object):
     def __init__(self,method,ischain=True,
-                     thin=True,nthin=None,
-                     ndim=None,burnin=0.2,
+                     thinfrac=0.1,burnfrac=0.2,
+                     ndim=None, kmax= 5, 
+                     priorvolume=1,debug=False,
                      nsample=None,
                       nbatch=1,
                       brange=None,
                       bscale='',
-                      kmax= 5,        
                       args={},                                            
                       gdkwarg={},
                       verbose=1):
@@ -205,6 +321,10 @@ class MCEvidence(object):
         """
         #
         self.verbose=verbose
+        if debug or verbose>1: logging.basicConfig(level=logging.DEBUG)
+        if verbose==0: logging.basicConfig(level=logging.WARNING)            
+        self.logger = logging.getLogger(__name__)
+        
         self.info={}
         #
         self.nbatch=nbatch
@@ -220,6 +340,7 @@ class MCEvidence(object):
         self.nchain  = np.zeros(self.nbatch,dtype=int)               
         #
         self.kmax=max(2,kmax)
+        self.priorvolume=priorvolume
         #
         self.ischain=ischain
         #
@@ -229,9 +350,9 @@ class MCEvidence(object):
             
             if isinstance(method,str):
                 self.fname=method      
-                print('Using chains: ',method)
+                self.logger.debug('Using chains: ',method)
             else:
-                print('dictionary of samples and loglike array passed')
+                self.logger.debug('dictionary of samples and loglike array passed')
                 
         else: #python class which includes a method called sampler
             
@@ -242,16 +363,15 @@ class MCEvidence(object):
             
             #given a class name, get an instance
             if isinstance(method,str):
-                print('my method',method)
                 XClass = getattr(sys.modules[__name__], method)
             else:
                 XClass=method
             
             if hasattr(XClass, '__class__'):
-                print('eknn: method is an instance of a class')
+                self.logger.debug(__name__+': method is an instance of a class')
                 self.method=XClass
             else:
-                print('eknn: method is class variable .. instantiating class')
+                self.logger.debug(__name__+': method is class variable .. instantiating class')
                 self.method=XClass(*args)                
                 #if passed class has some info, display it
                 try:
@@ -265,35 +385,30 @@ class MCEvidence(object):
                 method=self.method.Sampler(nsamples=self.nsamples)                                 
                 
         #======== By this line we expect only chains either in file or dict ====
-        self.gd = samples2gdist(method,**gdkwarg)
-        self.nparamMC=self.gd.samples.paramNames.numNonDerived()
-        if ndim is None: ndim=self.nparamMC
-        self.ndim=ndim
-        
-        #get information about input samples
-        sample_shape=self.gd.samples.samples.shape
-        npar=sample_shape[-1]
-        
+        self.gd = MCSamples(method,**gdkwarg)        
+        self.info['NparamsMC']=self.gd.nparamMC
+        self.info['Nsamples_read']=self.gd.get_shape()[0]
+        self.info['Nparams_read']=self.gd.get_shape()[1]
         #
-        self.info['Nsamples_read']=sample_shape[0]
-        self.info['Nparams_read']=npar
-        self.info['NparamsMC']=self.nparamMC
-        self.info['NparamsCosmo']=self.ndim        
-        self.info['MaxAutoCorrLen']=np.array([self.gd.samples.getCorrelationLength(j) for j in range(self.ndim)]).max()
+        if burnfrac>0:
+            _=self.gd.removeBurn(remove=burnfrac)
+        if thinfrac>0:
+            _=self.gd.thin_poisson(thinfrac)
+
+        #after burn-in and thinning
+        self.nsample = self.gd.get_shape()[0]            
+        if ndim is None: ndim=self.gd.nparamMC        
+        self.ndim=ndim        
+        #
+        self.info['NparamsCosmo']=self.ndim
+        self.info['Nsamples']=self.nsample
+        #
+        #self.info['MaxAutoCorrLen']=np.array([self.gd.samples.getCorrelationLength(j) for j in range(self.ndim)]).max()
 
         #print('***** ndim,nparamMC,MaxAutoCorrLen :',self.ndim,self.nparamMC,self.info['MaxAutoCorrLen'])
         
-        if thin:
-            _=self.gd.thin(nthin=nthin)
-
-        if burnin>0:
-            self.gd.samples.removeBurn(remove=0.3)
-        #
-        self.nsample=self.gd.samples.samples.shape[0]
-        self.info['Nsamples']=self.nsample #after thinning
-        
         #print('init minmax logl',method['lnprob'].min(),method['lnprob'].max())            
-        print('chain array dimensions: %s x %s ='%(self.nsample,self.ndim))
+        self.logger.info('chain array dimensions: %s x %s ='%(self.nsample,self.ndim))
             
         #
         self.set_batch()
@@ -317,7 +432,7 @@ class MCEvidence(object):
             powmin=np.array(self.brange).min()
             powmax=np.array(self.brange).max()
             if powmin==powmax and self.nbatch>1:
-                print('nbatch>1 but batch range is set to zero.')
+                self.logger.error('nbatch>1 but batch range is set to zero.')
                 raise
         return powmin,powmax
     
@@ -358,8 +473,9 @@ class MCEvidence(object):
         if rand and not self.brange is None:
             ntot=self.method['samples'].shape[0]
             if nsamples>ntot:
-                print('nsamples=%s, ntotal_chian=%s'%(nsamples,ntot))
+                self.logger.error('nsamples=%s, ntotal_chian=%s'%(nsamples,ntot))
                 raise
+            
             idx=np.random.randint(0,high=ntot,size=nsamples)
         else:
             idx=np.arange(istart,nsamples+istart)
@@ -370,15 +486,61 @@ class MCEvidence(object):
         
 
     def evidence(self,verbose=None,rand=False,info=False,
-                      profile=False,rprior=1,pos_lnp=False,
+                      profile=False,pvolume=None,pos_lnp=False,
                       nproc=-1,prewhiten=True):
-        #
-        # MLE=maximum likelihood estimate of evidence:
-        #
+        '''
+
+        MARGINAL LIKELIHOODS FROM MONTE CARLO MARKOV CHAINS algorithm described in Heavens et. al. (2017)
+       
+        Parameters
+        ---------
+
+        :param verbose - controls the amount of information outputted during run time
+        :param rand - randomised sub sampling of the MCMC chains
+        :param info - if True information about the analysis will be returd to the caller
+        :param pvolume - prior volume
+        :param pos_lnp - if input log likelihood is multiplied by negative or not
+        :param nproc - determined how many processors the scikit package should use or not
+        :param prewhiten  - if True chains will be normalised to have unit variance
         
+        Returns
+        ---------
+
+        MLE - maximum likelihood estimate of evidence:
+        self.info (optional) - returned if info=True. Contains useful information about the chain analysed
+               
+
+        Notes
+        ---------
+
+        The MCEvidence algorithm is implemented using scikit nearest neighbour code.
+
+
+        Examples
+        ---------
+
+        To run the evidence estimation using 6 MPI processes
+        >> from MCEvidence import MCEvidence
+        >> MLE = MCEvidence('/path/to/chain').evidence()
+        
+
+        References
+        -----------
+
+        .. [1] Heavens etl. al. (2017)
+        
+        '''     
             
         if verbose is None:
             verbose=self.verbose
+
+        #get prior volume
+        if pvolume is None:
+            logPriorVolume=math.log(self.priorvolume)
+        else:
+            logPriorVolume=math.log(pvolume)            
+
+        self.logger.debug('log prior volume: ',logPriorVolume)
             
         kmax=self.kmax
         ndim=self.ndim
@@ -398,9 +560,12 @@ class MCEvidence(object):
             DkNN    = np.zeros((S,kmax))
             indices = np.zeros((S,kmax))
             volume  = np.zeros((S,kmax))
+
+            samples_raw = np.zeros((S,ndim))
+            samples_raw_cmc,logL,weight=self.get_samples(S,istart=itot,rand=rand)
+            samples_raw[:,0:ndim] =  samples_raw_cmc[:,0:ndim]
             
-            samples_raw,logL,weight=self.get_samples(S,istart=itot,rand=rand)
-            #
+            #We need the logarithm of the likelihood - not the negative log
             if pos_lnp: logL=-logL
                 
             # Renormalise loglikelihood (temporarily) to avoid underflows:
@@ -410,6 +575,7 @@ class MCEvidence(object):
             #print('(mean,min,max) of LogLikelihood: ',fs.mean(),fs.min(),fs.max())
             
             if prewhiten:
+                self.logger.info('Prewhitenning chains using sample covariance matrix ..')
                 # Covariance matrix of the samples, and eigenvalues (in w) and eigenvectors (in v):
                 ChainCov = np.cov(samples_raw.T)
                 eigenVal,eigenVec = np.linalg.eig(ChainCov)                
@@ -428,9 +594,14 @@ class MCEvidence(object):
                 Jacobian=1
                 samples=samples_raw
 
+            #print('samples, after prewhiten', samples[1000:1010,0:ndim])
+            #print('Loglikes ',logLmax,logL[1000:1010],fs[1000:1010])
+            #print('weights',weight[1000:1010])
+            #print('EigenValues=',eigenVal)
+            
             # Use sklearn nearest neightbour routine, which chooses the 'best' algorithm.
             # This is where the hard work is done:
-            nbrs = NearestNeighbors(n_neighbors=kmax, 
+            nbrs = NearestNeighbors(n_neighbors=kmax+1, 
                                     algorithm='auto',n_jobs=nproc).fit(samples)
             DkNN, indices = nbrs.kneighbors(samples)                
     
@@ -452,36 +623,36 @@ class MCEvidence(object):
     
                 # Maximum likelihood estimator for the evidence
                 SumW     = np.sum(weight)
-                #print('SumW*S*amax*Jacobian',SumW,S,amax,Jacobian)
-                MLE[ipow,k] = math.log(SumW*S*amax*Jacobian) + logLmax + math.log(rprior)
-            
+                MLE[ipow,k] = math.log(SumW*amax*Jacobian) + logLmax - logPriorVolume
+
+                #print('SumW,S,amax,Jacobian,logLmax,logPriorVolume,MLE:',SumW,S,amax,Jacobian,logLmax,logPriorVolume,MLE[ipow,k])
                 # Output is: for each sample size (S), compute the evidence for kmax-1 different values of k.
                 # Final columm gives the evidence in units of the analytic value.
                 # The values for different k are clearly not independent. If ndim is large, k=1 does best.
                 if self.brange is None:
                     #print('(mean,min,max) of LogLikelihood: ',fs.mean(),fs.min(),fs.max())
                     if verbose>1:
-                        print('k={},nsample={}, dotp={}, median_volume={}, a_max={}, MLE={}'.format( 
+                        self.logger.info('k={},nsample={}, dotp={}, median_volume={}, a_max={}, MLE={}'.format( 
                             k,S,dotp,statistics.median(volume[:,k]),amax,MLE[ipow,k]))
                 
                 else:
                     if verbose>1:
                         if ipow==0: 
-                            print('(iter,mean,min,max) of LogLikelihood: ',ipow,fs.mean(),fs.min(),fs.max())
-                            print('-------------------- useful intermediate parameter values ------- ')
-                            print('nsample, dotp, median volume, amax, MLE')                
-                        print(S,k,dotp,statistics.median(volume[:,k]),amax,MLE[ipow,k])
+                            self.logger.info('(iter,mean,min,max) of LogLikelihood: ',ipow,fs.mean(),fs.min(),fs.max())
+                            self.logger.info('-------------------- useful intermediate parameter values ------- ')
+                            self.logger.info('nsample, dotp, median volume, amax, MLE')                
+                        self.logger.info(S,k,dotp,statistics.median(volume[:,k]),amax,MLE[ipow,k])
 
         #MLE[:,0] is zero - return only from k=1
         if self.brange is None:
             MLE=MLE[0,1:]
         else:
             MLE=MLE[:,1:]
-            
+
         if verbose>0:
-            print()
+            print('')
             print('MLE[k=(1,2,3,4)] = ',MLE)
-            print()
+            print('')        
         
         if info:
             return MLE, self.info
@@ -489,7 +660,6 @@ class MCEvidence(object):
             return MLE
     
            
-
 #===============================================
 
 if __name__ == '__main__':
