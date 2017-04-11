@@ -337,8 +337,8 @@ for ipp in range(lpp[rank]):  #loop over data
                 fchain=fname+cext
                 e,info = MCEvidence(fchain,ndim=ndim,
                                     priorvolume=prior_volume,
-                                    kmax=kmax,verbose=verbose,burnfrac=burnfrac,
-                                    thinfrac=thinfrac).evidence(info=True,pos_lnp=False)
+                                    kmax=kmax,verbose=verbose,burnlen=burnfrac,
+                                    thinlen=thinfrac).evidence(info=True,pos_lnp=False)
                 mce[imm,icc]=e[0]
                 icc+=1
                 nc_read=nc_read+'%s,'%info['Nsamples_read']

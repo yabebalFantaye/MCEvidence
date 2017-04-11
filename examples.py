@@ -1,24 +1,34 @@
+'''
+Collection of codes that can be used to test the MCEvidence code.
+The examples below demostrate the validitiy of MCEvidence for 
+three MCMC samplers:
 
-# coding: utf-8
+* Gibbs Sampling
+* PyStan NUT sampler
+* EMCEE sampler
+
+Two types of likelihood surface is considered
+
+* Gaussian Linear Model - 3 dimensions
+* N-dimensional Gaussian - 10 dimensions
+
+'''
 
 from __future__ import print_function
 import IPython
 import pickle
 #
-import os, sys, math
+import os, sys, math,glob
 import pandas as pd
 import time
 import numpy as np
-#import pandas as pd
 import sklearn as skl
 import statistics
 from sklearn.neighbors import NearestNeighbors, DistanceMetric
-#from sklearn.neighbors import KDTree
-import matplotlib.pyplot as plt
 import scipy.special as sp
 #
-import eknn
-from wrap import *
+from MCEvidence import MCEvidence
+
 
 #pretty plots if seaborn is installed
 try: 
@@ -29,7 +39,7 @@ except:
     pass
 
 
-class harry_eg(object):
+class glm_eg(object):
     def __init__(self,x=None,theta=None,
                  rms=0.2,ptheta=None,verbose=1):
         
@@ -69,7 +79,7 @@ class harry_eg(object):
         self.b      = self.y_sample/self.noise_rms               
         
         #Initial point to start sampling 
-        self.theta_sample=reduce(np.dot, [inv(np.dot(self.D.T, self.D)), self.D.T, self.b])
+        self.theta_sample=reduce(np.dot, [np.linalg.inv(np.dot(self.D.T, self.D)), self.D.T, self.b])
         
     def quadratic(self,parameters):
         return parameters[0] + parameters[1]*self.x + parameters[2]*self.x**2
@@ -79,8 +89,8 @@ class harry_eg(object):
         b=self.b
         D=self.D
         #
-        num1 = np.log(det(2.0 * np.pi * inv(np.dot(D.T, D))))
-        num2 = -0.5 * (np.dot(b.T, b) - reduce(np.dot, [b.T, D, inv(np.dot(D.T, D)), D.T, b]))
+        num1 = np.log(det(2.0 * np.pi * np.linalg.inv(np.dot(D.T, D))))
+        num2 = -0.5 * (np.dot(b.T, b) - reduce(np.dot, [b.T, D, np.linalg.inv(np.dot(D.T, D)), D.T, b]))
         den1 = np.log(self.ptheta.prod()) #prior volume
         #
         log_Evidence = num1 + num2 - den1 #(We have ignored k)
@@ -254,8 +264,8 @@ class model_2d(object):
 
 #     
 #============================================
-class alan_eg(object):
-    def __init__(self,ndim=10,ndata=100000,verbose=1):
+class gaussian_eg(object):
+    def __init__(self,ndim=10,ndata=10000,verbose=1):
         #  Generate data
 
         # Number of dimensions: up to 15 this seems to work OK. 
@@ -320,6 +330,7 @@ class alan_eg(object):
             f[i]=self.lnprob(theta[i,:])
 
         return theta, f   
+
     def pos(self,n):
         # Generate samples over prior space volume
         return np.random.normal(self.mean_sample,5*self.sigma_mean,size=(n,self.ndim))
@@ -330,230 +341,223 @@ class alan_eg(object):
         print('ndata=',self.ndata)
         print()
     
-#================================
-
-import bayesglm as sglm
-import pystan
-
-harry_stanmodel='''
- data {
-         int<lower=1> K;
-         int<lower=0> N;
-         real y[N];
-         matrix[N,K] x;
- }
- parameters {
-         vector[K] beta;
-         real sigma;
- }
- model {         
-         real mu[N];
-         vector[N] eta   ;
-         eta <- x*beta;
-         for (i in 1:N) {
-            mu[i] <- (eta[i]);
-         };
-         increment_log_prob(normal_log(y,mu,sigma));
-
- }
- '''   
-harry=eknn.harry_eg()
-df=pd.DataFrame()
-df['x1']=harry.x
-df['x2']=harry.x**2
-df['y']=harry.y_sample
-
-harry_data={'N':harry.ndata,
-           'K':harry.ndim,
-            'x':df[['x1','x2']],
-           'y':harry.y_sample}
-# Intialize pystan -- this will convert our pystan code into C++
-# and run MCMC
-#harry_fit = pystan.stan(model_code=harry_stanmodel, data=harry_data,
-#                  iter=1000, chains=4)
-
-
-# In[23]:
-
-iterations=10000
-class jeffry_prior():
-    def __init__(self, sigma):
-        self.sigma = sigma
-
-    def __repr__(self):
-        return self.to_string()
-
-    def to_string(self):
-        return "normal(0,{0})".format(self.sigma)
-class normal_prior():
-    def __init__(self, mu, sigma):
-        self.mu = mu
-        self.sigma = sigma
-
-    def __repr__(self):
-        return self.to_string()
-
-    def to_string(self):
-        return "normal({0},{1})".format(self.mu, self.sigma)
-
-
-#priors=(((i+1,), jeffry_prior(np.sqrt(harry.ndata))) for i in range(harry.ndim-1) )
-
-priors={"x%s"%(i+1) : normal_prior(harry.theta[i+1],0.2) for i in range(harry.ndim-1) }
-
-cache_fn='chains/harry_pystan_chain.pkl'
-#read chain from cache if possible 
-try:
-    raise
-    print('reading chain from: '+cache_fn)
-    harry_stan_chain = pickle.load(open(cache_fn, 'rb'))
-except:
-    harry_fit = sglm.stan_glm("y ~ x1 + x2", df, 
-                              family=sglm.family.gaussian(), 
-                              iterations=iterations) #,priors=priors
-
-    # Extract PyStan chain for Harry's GLM example
-    harry_stan_chain=harry_fit.extract(permuted=True)   
-    print('writing chain in: '+cache_fn)
-    with open(cache_fn, 'wb') as f:
-            pickle.dump(harry_stan_chain, f)
-
-    #print stan model
-    harry_model=harry_fit.stanmodel.model_code.expandtabs() #.rsplit('\n') 
-    with open('harry.stan', 'w') as f:   
-        f.write(harry_model[:])
-
-theta_means = harry_stan_chain['beta'].mean(axis=0)
-print('estimated: ',theta_means)
-print('input: ',harry.theta)
-
-#np.testing.assert_allclose(theta_means, harry.theta, atol=.01)
-
-
-# In[27]:
-
-plt.plot(harry_stan_chain['lnprob'])
-harry_stan_chain['lnprob']=harry_stan_chain['lnprob']+2*np.log(0.1/np.sqrt(1.0*harry.ndata))
-plt.plot(harry_stan_chain['lnprob'])
-
-
-# In[24]:
-
-# Check input parameter recovery and estimate evidence
-if 'beta' in harry_stan_chain.keys(): harry_stan_chain['samples']=harry_stan_chain.pop('beta')
-if 'lp__' in harry_stan_chain.keys(): harry_stan_chain['lnprob']=harry_stan_chain.pop('lp__')
-print(harry_stan_chain['samples'].shape)
-
-#
-gdstans=samples2gdist(harry_stan_chain['samples'],harry_stan_chain['lnprob'],
-                     trueval=harry.theta,px='\\theta')
-gdstans.corner(figsize=(10,10))
-#gdstans.labels
-
-
-# In[28]:
-
-# Here given pystan samples and log probability, we compute evidence ratio 
-eharry=eknn.echain(method=harry_stan_chain,verbose=2,ischain=True)
-MLE=eharry.chains2evidence() 
-eharry.vis_mle(MLE)
-
-
-# In[ ]:
-
-
-
-
-# ## Emcee example
-
-# In[164]:
-
-##learn about emcee sampler using help
-#help(mec2d.sampler)
-
-
-# ## emcee sampling using N-dimensional Gaussian likelihood
-
-# In[210]:
-
-#
-#gd_mc.samples.getName()
-
-
-# In[21]:
-
-#Evidence calculation based on emcee sampling
-mNd=eknn.alan_eg()
-mecNd=make_emcee_chain(mNd,nwalkers=300)
-samples,lnp=mecNd.mcmc(nmcmc=50000,thin=50)
-
-
-# In[26]:
-
-#corner plot can be done also using getdist wrapper
-#getdist wrapper has a lot more functionality than just plotting
-gd_mc=samples2gdist(samples,lnp,trueval=mNd.mean,px='m')
-print('correlation length:',gd_mc.samples.getCorrelationLength(3))
-gd_mc.samples.thin(20)
-##gd_mc.corner()
-#mecNd.emcee_sampler.get_autocorr_time(fast=True)
-
-
-# In[28]:
-
-thin_samples=gd_mc.samples.samples
-thin_lnp=gd_mc.samples.loglikes
-
-print(len(thin_lnp),thin_samples.shape)
-
-#estimate evidence
-ealan=eknn.echain(method={'samples':thin_samples,'lnprob':thin_lnp},
-                  verbose=2,ischain=True,brange=[3,4.2])
-MLE=ealan.chains2evidence(rand=True) 
-
-
-# In[29]:
-
-ealan.vis_mle(MLE)
-
-
-# ## Emcee 2D example
-
-# In[ ]:
-
-#test model class .. visualise uniform sampling
-m2d=eknn.model_2d()
-
-#test emcee wrapper 
-mec2d=make_emcee_chain(m2d,nwalkers=200)
-chain2d,fs=mec2d.mcmc(nmcmc=500)
-
-
-#let's trangle plot chain samples 
-fig = corner.corner(chain2d, labels=["$m$", "$b$"], extents=[[-1.1, -0.8], [3.5, 5.]],
-                      truths=m2d.p, quantiles=[0.16, 0.5, 0.84], 
-                    show_titles=True, labels_args={"fontsize": 40})
-fig.set_size_inches(10,10)
-
-# Plot back the results in the space of data
-#fig = plt.figure()
-#xl = np.array([0, 10])
-#for m, b in chain2d[np.random.randint(len(chain2d), size=100)]:
-#    if m<0:
-#        plt.plot(xl, m*xl+b, color="k", alpha=0.1)
-    
-#plt.plot(xl, m2d.p[0]*xl+m2d.p[1], color="r", lw=2, alpha=0.8)
-#plt.errorbar(m2d.x, m2d.y, yerr=m2d.yerr, fmt=".k")
-#plt.title('Input Data vs Samples (grey)')
-#fig.set_size_inches(12, 8)
-
-
-# In[ ]:
-
-
-
-
-# In[ ]:
-
-
+#====================================
+#      PyStan chain example
+#====================================
+def glm_stan(iterations=10000,outdir='chains'):
+    import pystan
+    stanmodel='''
+     data {
+             int<lower=1> K;
+             int<lower=0> N;
+             real y[N];
+             matrix[N,K] x;
+     }
+     parameters {
+             vector[K] beta;
+             real sigma;
+     }
+     model {         
+             real mu[N];
+             vector[N] eta   ;
+             eta <- x*beta;
+             for (i in 1:N) {
+                mu[i] <- (eta[i]);
+             };
+             increment_log_prob(normal_log(y,mu,sigma));
+
+     }
+     '''   
+    glmq=glm_eg()
+    df=pd.DataFrame()
+    df['x1']=glmq.x
+    df['x2']=glmq.x**2
+    df['y']=glmq.y_sample
+
+    data={'N':glmq.ndata,
+               'K':glmq.ndim,
+                'x':df[['x1','x2']],
+               'y':glmq.y_sample}
+
+   
+    if os.path.exists(outdir):
+        os.makedirs(outdir)
+    cache_fname='{}/glm2d_pystan_chain.pkl'.format(outdir)
+    #read chain from cache if possible 
+    try:
+        raise
+        print('reading chain from: '+cache_fname)
+        stan_chain = pickle.load(open(cache_fname, 'rb'))
+    except:
+        # Intialize pystan -- this will convert our pystan code into C++
+        # and run MCMC
+        fit = pystan.stan(model_code=stanmodel, data=data,
+                          iter=1000, chains=4)
+
+        # Extract PyStan chain for GLM example
+        stan_chain=fit.extract(permuted=True)
+
+        # Check input parameter recovery and estimate evidence
+        if 'beta' in stan_chain.keys(): stan_chain['samples']=stan_chain.pop('beta')
+        if 'lp__' in stan_chain.keys(): stan_chain['loglikes']=stan_chain.pop('lp__')
+        
+        
+        print('writing chain in: '+cache_fname)
+        with open(cache_fname, 'wb') as f:
+                pickle.dump(stan_chain, f)
+
+
+    theta_means = stan_chain['beta'].mean(axis=0)
+    print('GLM example input parameter values: ',harry.theta)
+    print('GLM example estimated parameter values: ',theta_means)
+
+
+    # Here given pystan samples and log probability, we compute evidence ratio 
+    mce=MCEvidence(stan_chain,verbose=2,ischain=True,brange=[3,4.2]).evidence()
+
+    return mce
+
+#====================================
+#      Emcee chain example
+#====================================
+import emcee
+class make_emcee_chain(object):
+    # A wrapper to the emcee MCMC sampler
+    #
+    def __init__(self,model,nwalkers=500,nburn=300,arg={}):
+
+        #check if model is string or not
+        if isinstance(model,str):
+            print('name of model: ',model)
+            XClass = getattr(sys.modules[__name__], model)
+        else:            
+            XClass=model        
+
+        #check if XClass is instance or not
+        if hasattr(XClass, '__class__'): 
+            print('instance of a model class is passed')
+            self.model=XClass #it is instance 
+        else:
+            print('class variable is passed .. instantiating class')
+            self.model=XClass(*arg)
+
+        self.ndim=self.model.ndim
+
+        #init emcee sampler
+        self.nwalkers=nwalkers
+        self.emcee_sampler = emcee.EnsembleSampler(self.nwalkers, 
+                                             self.model.ndim, 
+                                             self.model.lnprob)   
+
+        # burnin phase
+        pos0=self.model.pos(self.nwalkers)
+        pos, prob, state  = self.emcee_sampler.run_mcmc(pos0, nburn)
+
+        #save emcee state
+        self.prob=prob
+        self.pos=pos
+        self.state=state
+
+        #discard burnin chain 
+        self.samples = self.emcee_sampler.flatchain        
+        self.emcee_sampler.reset()
+
+    def mcmc(self,nmcmc=2000,**kwargs):
+        # perform MCMC - no resetting 
+        # size of the chain increases in time
+        time0 = time.time()
+        #
+        #pos=None makes the chain start from previous state of sampler
+        self.pos, self.prob, self.state  = self.emcee_sampler.run_mcmc(self.pos,nmcmc,**kwargs)
+        self.samples = self.emcee_sampler.flatchain    
+        self.lnp = self.emcee_sampler.flatlnprobability
+        #
+        time1=time.time()
+        #
+        print('emcee total time spent: ',time1-time0)        
+        print('samples shape: ',self.samples.shape)  
+
+        return self.samples,self.lnp
+
+    def Sampler(self,nsamples=2000):
+        # perform MCMC and return exactly nsamples
+        # reset sampler so that chains don't grow
+        #
+        N=(nsamples+self.nwalkers-1)/self.nwalkers #ceil to next integer
+        print('emcee: nsamples, nmcmc: ',nsamples,N*self.nwalkers)
+        #
+        #pos=None makes the chain start from previous state of sampler
+        self.pos, self.prob, self.state  = self.emcee_sampler.run_mcmc(self.pos,N)
+        self.samples = self.emcee_sampler.flatchain    
+        self.lnp = self.emcee_sampler.flatlnprobability
+        self.emcee_sampler.reset()
+
+        return self.samples[0:nsamples,:],self.lnp[0:nsamples]
+
+    def vis(self,chain=None,figsize=(10,10),**kwargs):
+        # Visualize the chains
+
+        if chain is None:
+            chain=self.samples
+
+        fig = corner.corner(chain, labels=self.model.label, 
+                                   truths=self.model.p,
+                                   **kwargs)            
+
+        fig.set_size_inches(figsize)  
+
+    def info(self):
+        print("Example using emcee sampling") 
+        print('nwalkers=',self.walkers)
+        try:
+            self.model.info()
+        except:
+            pass
+        print()  
+
+def gaussian_emcee(nwalkers=300,thin=5,nmcmc=5000):
+    #Evidence calculation based on emcee sampling
+    mNd=gaussian_eg()
+    mecNd=make_emcee_chain(mNd,nwalkers=nwalkers)
+    samples,lnp=mecNd.mcmc(nmcmc=nmcmc,thin=thin)
+
+
+    #estimate evidence
+    chain={'samples':samples,'loglikes':lnp}
+                          
+    mce=MCEvidence(chain, verbose=2,ischain=True,                       
+                       brange=[3,4.2]).evidence(rand=True)
+
+    return mce
+
+#===============================================
+
+if __name__ == '__main__':
+    if len(sys.argv) > 1:
+        method=sys.argv[1]
+    else:
+        method='gaussian_eg'
+
+    if len(sys.argv) > 2:
+        nsamples=sys.argv[2]
+    else:
+        nsamples=10000
+
+    if method in ['gaussian_eg','glm_eg']:
+        print('Using example: ',method)
+
+        #get class instance
+        XClass = getattr(sys.modules[__name__], method)
+        
+        # Now Generate samples.
+        print('Calling sampler to get MCMC chain: nsamples=',nsamples)
+        samples,logl=XClass(verbose=2).Sampler(nsamples=nsamples)
+
+        print('samples and loglikes shape: ',samples.shape,logl.shape)
+        
+        chain={'samples':samples,'loglikes':logl}       
+        mce=MCEvidence(chain,thinlen=2,burnlen=0.1,verbose=2,ischain=True).evidence()
+        
+    else:
+        mce=eval(method+'()')
 

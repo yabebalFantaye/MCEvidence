@@ -78,17 +78,18 @@ try:
             if isinstance(str_or_dict,str):
                 
                 fileroot=str_or_dict
-                self.logger.info('samples2gdist: string passed. Loading chain from '+fileroot)                
+                self.logger.info('string passed. Loading chain from '+fileroot)                
                 self.load_from_file(fileroot,**kwargs)
                 
             elif isinstance(str_or_dict,dict):
-                
                 d=str_or_dict
+                self.logger.info('Chain is passed as dict: keys='+','.join(d.keys()))
+                
                 chain=d['samples']
                 loglikes=d['loglikes']
-                weight=d['weights'] if 'weights' in d.keys() else np.ones(len(loglikes))
+                weights=d['weights'] if 'weights' in d.keys() else np.ones(len(loglikes))
                 ndim=chain.shape[1]
-                
+
                 if names is None:
                     names = ["%s%s"%('p',i) for i in range(ndim)]
                 if labels is None:
@@ -99,9 +100,14 @@ try:
                 self.trueval=trueval
                 self.samples = gd.MCSamples(samples=chain,
                                             loglikes=loglikes,
-                                            weights=weight,
+                                            weights=weights,
                                             names = names,
                                             labels = labels)
+                #Removes parameters that do not vary
+                self.samples.deleteFixedParams()
+                #Removes samples with zero weight
+                self.samples.filter(weights>0)
+                
             else:
                self.logger.info('Passed first argument type is: ',type(str_or_dict))                
                self.logger.error('first argument to samples2getdist should be a string or dict.')
@@ -145,14 +151,14 @@ try:
             #Load from file
             #self.samples=[]
             #for f in rootname:
-            self.samples=gd.loadMCSamples(rootname,**kwargs)
+            self.samples=gd.loadMCSamples(rootname,**kwargs).makeSingle()
                 
         def thin(self,nminwin=1,nthin=None):
             if nthin is None:
                 ncorr=max(1,int(self.samples.getCorrelationLength(nminwin)))
             else:
                 ncorr=nthin
-            self.logger.info('Acutocorrelation Length: ncorr=',ncorr)
+            self.logger.info('Acutocorrelation Length: ncorr=%s'%ncorr)
             try:
                 self.samples.thin(ncorr)
             except:
@@ -161,9 +167,11 @@ try:
         def thin_poisson(self,thinfrac=0.1,nthin=None):
             try:
                 w=self.samples.weights*thinfrac                
-                thin_ix=np.where(w>0)
+                thin_ix=np.where(w>0)[0]
+                logger.info('Thinning with thinfrac={}. new_nsamples={},old_nsamples={}'.format(thinfrac,len(thin_ix),len(thin_ix)))
                 self.samples.setSamples(self.samples.samples[thin_ix, :],
-                                        loglikes=self.samples.loglikes[thin_ix])
+                                        self.samples.loglikes[thin_ix],
+                                        w[thin_ix]) #.makeSingle()
             except:
                 self.logger.info('Poisson based thinning not possible.')
 
@@ -233,7 +241,7 @@ except:
                 DataTable=np.loadtxt(fname)
             except:
                 d=[]
-                for glob.glob(fname+'*'):
+                for fname in glob.glob(fname+'*'):
                     d.append(np.loadtxt(fname))
                 DataTable=np.concatenate(d)
                 
@@ -245,6 +253,14 @@ except:
 
             return chain_dict
 
+        def thin(self,nthin=1):
+            try:
+                self.samples=self.samples[0::nthin, :]
+                self.loglikes=self.loglikes[0::nthin]
+                self.weights=self.weights[0::nthin]                
+            except:
+                self.logger.info('Thinning not possible.')
+        
         def thin_poisson(self,thinfrac=0.1,nthin=None):
             try:
                 w=self.weights*thinfrac                
@@ -279,7 +295,7 @@ except:
 
 class MCEvidence(object):
     def __init__(self,method,ischain=True,
-                     thinfrac=0.1,burnfrac=0.2,
+                     thinlen=0.0,burnlen=0.0,
                      ndim=None, kmax= 5, 
                      priorvolume=1,debug=False,
                      nsample=None,
@@ -385,15 +401,19 @@ class MCEvidence(object):
                 method=self.method.Sampler(nsamples=self.nsamples)                                 
                 
         #======== By this line we expect only chains either in file or dict ====
-        self.gd = MCSamples(method,**gdkwarg)        
+        self.gd = MCSamples(method,debug=verbose>1,**gdkwarg)
+
         self.info['NparamsMC']=self.gd.nparamMC
         self.info['Nsamples_read']=self.gd.get_shape()[0]
         self.info['Nparams_read']=self.gd.get_shape()[1]
         #
-        if burnfrac>0:
-            _=self.gd.removeBurn(remove=burnfrac)
-        if thinfrac>0:
-            _=self.gd.thin_poisson(thinfrac)
+        if burnlen>0:
+            _=self.gd.removeBurn(remove=burnlen)
+        if thinlen>0:
+            if thinlen<1:
+                _=self.gd.thin_poisson(thinlen)
+            else:
+                _=self.gd.thin(nthin=thinlen)                
 
         #after burn-in and thinning
         self.nsample = self.gd.get_shape()[0]            
