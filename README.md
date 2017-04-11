@@ -1,12 +1,12 @@
 # MCEvidence
 A python package implementing the MARGINAL LIKELIHOODS FROM MONTE CARLO MARKOV CHAINS algorithm described in Heavens et. al. (2017)
 
-#Notes
+# Notes
 
 The MCEvidence algorithm is implemented using scikit nearest neighbour code.
 
 
-#Examples
+# Examples
  
         To run the evidence estimation from an ipython terminal or notebook
 
