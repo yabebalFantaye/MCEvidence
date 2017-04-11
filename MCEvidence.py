@@ -539,10 +539,15 @@ class MCEvidence(object):
         Examples
         ---------
 
-        To run the evidence estimation using 6 MPI processes
+        To run the evidence estimation from an ipython terminal or notebook
+
         >> from MCEvidence import MCEvidence
         >> MLE = MCEvidence('/path/to/chain').evidence()
         
+
+        To run MCEvidence from shell
+
+        $ python MCEvidence.py </path/to/chain> 
 
         References
         -----------
