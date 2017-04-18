@@ -1,0 +1,56 @@
+
+############## RootDirectory=COM_CosmoParams_fullGrid_R2.00 ########
+
+# C0=plikHM_TT_lowTEB 
+# C1=plikHM_TT_lowTEB_post_BAO 
+# C2=plikHM_TT_lowTEB_post_lensing 
+# C3=plikHM_TT_lowTEB_post_H070p6 
+# C4=plikHM_TT_lowTEB_post_JLA 
+# C5=plikHM_TT_lowTEB_post_zre6p5 
+# C6=plikHM_TT_lowTEB_post_BAO_H070p6_JLA 
+# C7=plikHM_TT_lowTEB_post_lensing_BAO_H070p6_JLA 
+# C8=plikHM_TT_lowTEB_BAO 
+# C9=plikHM_TT_lowTEB_BAO_post_lensing 
+# C10=plikHM_TT_lowTEB_BAO_post_H070p6 
+# C11=plikHM_TT_lowTEB_BAO_post_H070p6_JLA 
+# C12=plikHM_TT_lowTEB_lensing 
+# C13=plikHM_TT_lowTEB_lensing_post_BAO 
+# C14=plikHM_TT_lowTEB_lensing_post_zre6p5 
+# C15=plikHM_TT_lowTEB_lensing_post_BAO_H070p6_JLA 
+# C16=plikHM_TT_lowTEB_lensing_BAO_post_H070p6 
+# C17=plikHM_TT_lowTEB_lensing_BAO_post_H070p6_JLA 
+# C18=plikHM_TTTEEE_lowTEB 
+# C19=plikHM_TTTEEE_lowTEB_post_BAO 
+# C20=plikHM_TTTEEE_lowTEB_post_lensing 
+# C21=plikHM_TTTEEE_lowTEB_post_H070p6 
+# C22=plikHM_TTTEEE_lowTEB_post_JLA 
+# C23=plikHM_TTTEEE_lowTEB_post_zre6p5 
+# C24=plikHM_TTTEEE_lowTEB_post_BAO_H070p6_JLA 
+# C25=plikHM_TTTEEE_lowl_lensing 
+# C26=plikHM_TTTEEE_lowl_lensing_post_BAO 
++------------------------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+
+|                        | C0    | C1    | C2    | C3    | C4    | C5    | C6    | C7    | C8    | C9    | C10   | C11   | C12   | C13   | C14   | C15   | C16   | C17   | C18   | C19   | C20   | C21   | C22   | C23   | C24   | C25   | C26   |
+|------------------------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------|
+| base                   | -0.89 | 0.00  | nan   | 0.00  | 0.00  | 0.00  | nan   | nan   | nan   | nan   | nan   | nan   | 0.00  | 0.00  | 0.00  | 0.00  | nan   | nan   | -0.41 | 0.00  | nan   | 0.00  | 0.00  | 0.00  | nan   | 0.00  | 0.00  |
+| base_omegak            | 0.00  | nan   | nan   | nan   | nan   | nan   | nan   | nan   | -1.78 | -1.55 | nan   | nan   | -3.50 | nan   | nan   | nan   | nan   | nan   | 0.00  | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   |
+| base_Alens             | -1.65 | -0.87 | nan   | -0.25 | -0.43 | -0.68 | nan   | nan   | nan   | nan   | nan   | nan   | -4.04 | -4.11 | nan   | nan   | nan   | nan   | -2.30 | -1.37 | nan   | -1.33 | -1.39 | -1.68 | nan   | nan   | nan   |
+| base_Alensf            | -1.68 | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | -0.60 | nan   | nan   | nan   | nan   | nan   | -2.18 | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   |
+| base_nnu               | -3.41 | nan   | -1.70 | -2.41 | -2.49 | -2.43 | nan   | nan   | 0.00  | 0.00  | nan   | 0.00  | nan   | nan   | nan   | nan   | nan   | nan   | -3.44 | nan   | -1.85 | -2.86 | -2.79 | -2.74 | nan   | nan   | nan   |
+| base_mnu               | -3.69 | nan   | nan   | -3.14 | -3.14 | -2.73 | nan   | nan   | -0.58 | nan   | 0.00  | -0.73 | -2.47 | nan   | nan   | nan   | 0.00  | 0.00  | -3.52 | nan   | nan   | -3.10 | -3.09 | -2.85 | nan   | -2.14 | -3.33 |
+| base_nrun              | -5.00 | -3.98 | -3.73 | -3.94 | -3.97 | -3.96 | nan   | -2.54 | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | -5.00 | -4.47 | -4.00 | -4.46 | -4.47 | -4.46 | nan   | nan   | nan   |
+| base_r                 | -4.92 | -3.95 | nan   | -3.94 | -3.96 | -3.95 | nan   | nan   | nan   | nan   | nan   | nan   | -3.95 | -3.90 | -3.85 | -3.89 | nan   | nan   | -4.66 | -3.92 | nan   | -3.94 | -3.94 | -3.94 | nan   | nan   | nan   |
+| base_w                 | -1.15 | nan   | 0.00  | -1.69 | -3.14 | -0.21 | nan   | nan   | -0.34 | -0.29 | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | -0.60 | nan   | 0.00  | -1.61 | nan   | -0.12 | nan   | nan   | nan   |
+| base_alpha1            | -6.38 | -5.62 | -5.14 | -5.49 | -5.51 | -5.41 | nan   | -4.01 | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | -7.99 | -7.34 | -6.22 | -7.28 | -7.30 | -7.34 | nan   | nan   | nan   |
+| base_Aphiphi           | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | -3.82 | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   |
+| base_yhe               | -2.97 | -1.89 | -1.09 | -1.77 | -1.82 | -1.82 | nan   | 0.00  | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | -2.98 | -2.29 | -1.60 | -2.28 | -2.30 | -2.31 | nan   | nan   | nan   |
+| base_mnu_Alens         | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   |
+| base_mnu_omegak        | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   |
+| base_mnu_w             | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   |
+| base_nnu_mnu           | -6.64 | -6.16 | nan   | -5.72 | nan   | nan   | -1.64 | nan   | nan   | nan   | nan   | nan   | -5.30 | -6.01 | nan   | nan   | nan   | nan   | -6.74 | -6.35 | nan   | -6.13 | nan   | nan   | -1.43 | nan   | nan   |
+| base_nnu_r             | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   |
+| base_nrun_r            | -8.99 | -7.70 | nan   | -7.60 | -7.67 | -7.70 | nan   | nan   | nan   | nan   | nan   | nan   | -8.59 | -8.30 | -8.18 | -8.25 | nan   | nan   | -8.99 | -8.10 | nan   | -8.11 | -8.12 | -8.13 | nan   | nan   | nan   |
+| base_nnu_yhe           | -5.25 | -4.45 | -3.50 | -4.25 | nan   | nan   | 0.00  | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | -5.24 | -4.67 | -3.62 | -4.88 | nan   | nan   | 0.00  | nan   | nan   |
+| base_w_wa              | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | -0.27 | -0.39 | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   |
+| base_nnu_meffsterile   | -6.18 | nan   | nan   | nan   | nan   | nan   | nan   | nan   | -2.93 | nan   | -2.00 | -2.73 | -5.24 | nan   | nan   | nan   | -1.78 | -1.76 | -6.80 | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   |
+| base_nnu_meffsterile_r | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | -9.22 | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   | nan   |
++------------------------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+
