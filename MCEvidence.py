@@ -115,6 +115,12 @@ try:
 
             self.nparamMC=self.samples.paramNames.numNonDerived()
 
+        def importance_sample(self,isfunc):
+            #importance sample with external function
+            self.logger.info('Importance sampling ..')
+            negLogLike=isfunc(self.samples.getParams())
+            self.samples.reweightAddingLogLikes(negLogLike)
+
         def get_shape(self):
             return self.samples.samples.shape
 
@@ -151,7 +157,7 @@ try:
             #Load from file
             #self.samples=[]
             #for f in rootname:
-            self.samples=gd.loadMCSamples(rootname,**kwargs).makeSingle()
+            self.samples=gd.loadMCSamples(rootname,**kwargs)#.makeSingle()
                 
         def thin(self,nminwin=1,nthin=None):
             if nthin is None:
@@ -294,7 +300,7 @@ except:
 #============================================================
 
 class MCEvidence(object):
-    def __init__(self,method,ischain=True,
+    def __init__(self,method,ischain=True,isfunc=None,
                      thinlen=0.0,burnlen=0.0,
                      ndim=None, kmax= 5, 
                      priorvolume=1,debug=False,
@@ -403,6 +409,12 @@ class MCEvidence(object):
         #======== By this line we expect only chains either in file or dict ====
         self.gd = MCSamples(method,debug=verbose>1,**gdkwarg)
 
+        if isfunc:
+            #try:
+            self.gd.importance_sample(isfunc)
+            #except:
+            #    self.logger.warn('Importance sampling failed. Make sure getdist is installed.')
+               
         self.info['NparamsMC']=self.gd.nparamMC
         self.info['Nsamples_read']=self.gd.get_shape()[0]
         self.info['Nparams_read']=self.gd.get_shape()[1]

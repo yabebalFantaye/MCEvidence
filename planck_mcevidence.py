@@ -53,6 +53,12 @@ import logging
 from MCEvidence import MCEvidence
 
 
+def h0_gauss_lnp(ParSamples,H0=73.24,H0_Err=1.74):
+    frac=(ParSamples.H0 - H0)/H0_Err
+    return 0.5*((frac**2.0))    
+        
+     
+    
 #---------------------------------------
 #---- Extract command line arguments ---
 #---------------------------------------
@@ -91,7 +97,7 @@ parser.add_argument("-t","--thin", "--thinfrac",
                     help="Thinning fraction")
 parser.add_argument("-o","--out", "--outdir",
                     dest="outdir",
-                    default='planck_mce_fullGrid_R2',
+                    default='planck_mce_fullGrid_R2_H0Reiss2016',
                     help="Output directory name")
 parser.add_argument("--N","--name",
                     dest="name",
@@ -335,7 +341,7 @@ for ipp in range(lpp[rank]):  #loop over data
 
             for icc, cext in enumerate(chains_extension_list):
                 fchain=fname+cext
-                e,info = MCEvidence(fchain,ndim=ndim,
+                e,info = MCEvidence(fchain,ndim=ndim,isfunc=h0_gauss_lnp,
                                     priorvolume=prior_volume,
                                     kmax=kmax,verbose=verbose,burnlen=burnfrac,
                                     thinlen=thinfrac).evidence(info=True,pos_lnp=False)
