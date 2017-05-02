@@ -66,7 +66,7 @@ try:
         #Ref:
         #http://getdist.readthedocs.io/en/latest/plot_gallery.html
 
-        def __init__(self,str_or_dict,trueval=None,debug=False,
+        def __init__(self,str_or_dict,trueval=None,debug=False,ndim=None,
                     names=None,labels=None,px='x',**kwargs):
             #Get the getdist MCSamples objects for the samples, specifying same parameter
             #names and labels; if not specified weights are assumed to all be unity
@@ -204,7 +204,7 @@ except:
     '''
     class MCSamples(object):
 
-        def __init__(self,str_or_dict,trueval=None,debug=False,
+        def __init__(self,str_or_dict,trueval=None,debug=False,ndim=None,
                     names=None,labels=None,px='x',**kwargs):
             #Get the getdist MCSamples objects for the samples, specifying same parameter
             #names and labels; if not specified weights are assumed to all be unity
@@ -216,7 +216,7 @@ except:
             if isinstance(str_or_dict,str):                
                 fileroot=str_or_dict
                 self.logger.info('Loading chain from '+fileroot)                
-                d = self.load_from_file(fileroot,**kwargs)                
+                d = self.load_from_file(fileroot,ndim=ndim,**kwargs)                
             elif isinstance(str_or_dict,dict):                
                 d=str_or_dict
             else:
@@ -242,7 +242,8 @@ except:
         def get_shape(self):            
             return self.samples.shape
 
-        def load_from_file(self,fname,**kwargs):
+        def load_from_file(self,fname,ndim=None,**kwargs):
+            self.logger.warn('Loading file assuming CosmoMC columns order: weight loglike param1 param2 ...')
             try:
                 DataTable=np.loadtxt(fname)
             except:
@@ -250,6 +251,10 @@ except:
                 for fname in glob.glob(fname+'*'):
                     d.append(np.loadtxt(fname))
                 DataTable=np.concatenate(d)
+                
+            if ndim is None:
+                self.logger.warn('Number of parameters is not provided. Using all parameters.')
+                ndim=DataTable.shape[-1]-2
                 
             chain_dict={}
             chain_dict['samples']=np.zeros((len(DataTable), ndim))
@@ -407,7 +412,7 @@ class MCEvidence(object):
                 method=self.method.Sampler(nsamples=self.nsamples)                                 
                 
         #======== By this line we expect only chains either in file or dict ====
-        self.gd = MCSamples(method,debug=verbose>1,**gdkwarg)
+        self.gd = MCSamples(method,debug=verbose>1,ndim=ndim,**gdkwarg)
 
         if isfunc:
             #try:
