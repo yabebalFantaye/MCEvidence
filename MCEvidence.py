@@ -58,7 +58,7 @@ try:
     from getdist import MCSamples, chains
     from getdist import plots, IniFile
     import getdist as gd
-    
+
     #====================================
     #      Getdist wrapper
     #====================================    
@@ -66,7 +66,7 @@ try:
         #Ref:
         #http://getdist.readthedocs.io/en/latest/plot_gallery.html
 
-        def __init__(self,str_or_dict,trueval=None,debug=False,ndim=None,
+        def __init__(self,str_or_dict,trueval=None,debug=False,
                     names=None,labels=None,px='x',**kwargs):
             #Get the getdist MCSamples objects for the samples, specifying same parameter
             #names and labels; if not specified weights are assumed to all be unity
@@ -106,20 +106,31 @@ try:
                 #Removes parameters that do not vary
                 self.samples.deleteFixedParams()
                 #Removes samples with zero weight
-                self.samples.filter(weights>0)
+                #self.samples.filter(weights>0)
                 
             else:
                self.logger.info('Passed first argument type is: ',type(str_or_dict))                
                self.logger.error('first argument to samples2getdist should be a string or dict.')
                raise
 
+            # a copy of the weights that can be altered to
+            # independently to the original weights
+            self.adjusted_weights=np.copy(self.samples.weights)
+            #
             self.nparamMC=self.samples.paramNames.numNonDerived()
 
         def importance_sample(self,isfunc):
             #importance sample with external function
-            self.logger.info('Importance sampling ..')
-            negLogLike=isfunc(self.samples.getParams())
-            self.samples.reweightAddingLogLikes(negLogLike)
+            negLogLikes=isfunc(self.samples.getParams())
+            scale= 0#np.min(negLogLikes)            
+            self.adjusted_weights *= np.exp(-(negLogLikes-scale))
+            #self.adjusted_weights *= negLogLikes 
+
+            #if self.samples.loglikes is not None:
+            #    self.samples.loglikes += negLogLikes
+            #self.samples.weights *= np.exp(-negLogLikes) 
+            #self.samples._weightsChanged()
+            #self.samples.reweightAddingLogLikes(negLogLikes)
 
         def get_shape(self):
             return self.samples.samples.shape
@@ -157,7 +168,18 @@ try:
             #Load from file
             #self.samples=[]
             #for f in rootname:
+            idchain=kwargs.pop('idchain', 0)
+            print('mcsample: rootname, idchain',rootname,idchain)
             self.samples=gd.loadMCSamples(rootname,**kwargs)#.makeSingle()
+            if idchain>0:
+                self.samples.samples=self.samples.getSeparateChains()[idchain-1].samples
+                self.samples.loglikes=self.samples.getSeparateChains()[idchain-1].loglikes
+                self.samples.weights=self.samples.getSeparateChains()[idchain-1].weights            
+                
+            # if rootname.split('.')[-1]=='txt':
+            #     basename='_'.join(rootname.split('_')[:-1])+'.paramnames'
+            #     print('loading parameter names from: ',basename)
+            #     self.samples.setParamNames(basename)
                 
         def thin(self,nminwin=1,nthin=None):
             if nthin is None:
@@ -204,7 +226,7 @@ except:
     '''
     class MCSamples(object):
 
-        def __init__(self,str_or_dict,trueval=None,debug=False,ndim=None,
+        def __init__(self,str_or_dict,trueval=None,debug=False,
                     names=None,labels=None,px='x',**kwargs):
             #Get the getdist MCSamples objects for the samples, specifying same parameter
             #names and labels; if not specified weights are assumed to all be unity
@@ -216,7 +238,7 @@ except:
             if isinstance(str_or_dict,str):                
                 fileroot=str_or_dict
                 self.logger.info('Loading chain from '+fileroot)                
-                d = self.load_from_file(fileroot,ndim=ndim,**kwargs)                
+                d = self.load_from_file(fileroot,**kwargs)                
             elif isinstance(str_or_dict,dict):                
                 d=str_or_dict
             else:
@@ -227,7 +249,7 @@ except:
             self.samples=d['samples']
             self.loglikes=d['loglikes']
             self.weights=d['weights'] if 'weights' in d.keys() else np.ones(len(self.loglikes))
-            ndim=self.samples.shape()[1]
+            ndim=self.get_shape()[1]
 
             if names is None:
                 names = ["%s%s"%('p',i) for i in range(ndim)]
@@ -238,29 +260,45 @@ except:
             self.labels=labels
             self.trueval=trueval
             self.nparamMC=self.get_shape()[1]
+
+            # a copy of the weights that can be altered to
+            # independently to the original weights
+            self.adjusted_weights=np.copy(self.weights)
             
         def get_shape(self):            
             return self.samples.shape
 
-        def load_from_file(self,fname,ndim=None,**kwargs):
+        def importance_sample(self,isfunc):
+            #importance sample with external function
+            self.logger.info('Importance sampling ..')
+            negLogLikes=isfunc(self.samples)
+            scale=0 #negLogLikes.min()
+            self.adjusted_weights *= np.exp(-(negLogLikes-scale))                     
+
+        def load_from_file(self,fname,**kwargs):
             self.logger.warn('Loading file assuming CosmoMC columns order: weight loglike param1 param2 ...')
             try:
                 DataTable=np.loadtxt(fname)
+                self.logger.info(' loaded file: '+fname)
             except:
                 d=[]
-                for fname in glob.glob(fname+'*'):
-                    d.append(np.loadtxt(fname))
-                DataTable=np.concatenate(d)
-                
-            if ndim is None:
-                self.logger.warn('Number of parameters is not provided. Using all parameters.')
-                ndim=DataTable.shape[-1]-2
-                
+                idchain=kwargs.pop('idchain', 0)
+                if idchain>0:
+                    f=fname+'_{}.txt'.format(idchain)
+                    DataTable=np.loadtxt(f)
+                    self.logger.info(' loaded file: '+f)                    
+                else:
+                    self.logger.info(' loaded files: '+fname+'*')                    
+                    for f in glob.glob(fname+'*'):
+                        d.append(np.loadtxt(f))
+                        
+                    DataTable=np.concatenate(d)
+
             chain_dict={}
-            chain_dict['samples']=np.zeros((len(DataTable), ndim))
+            #chain_dict['samples']=np.zeros((len(DataTable), ndim))
             chain_dict['weights']  =  DataTable[:,0]
             chain_dict['loglikes'] = DataTable[:,1]
-            chain_dict['samples'][:,0:ndim] =  DataTable[:,2:2+ndim]
+            chain_dict['samples'] =  DataTable[:,2:]
 
             return chain_dict
 
@@ -313,9 +351,8 @@ class MCEvidence(object):
                       nbatch=1,
                       brange=None,
                       bscale='',
-                      args={},                                            
-                      gdkwarg={},
-                      verbose=1):
+                      verbose=1,args={},
+                      **gdkwargs):
         """Evidence estimation from MCMC chains
         :param method: chain name (str) or array (np.ndarray) or python class
                 If string or numpy array, it is interpreted as MCMC chain. 
@@ -341,7 +378,7 @@ class MCEvidence(object):
 
         :param args (dict): argument to be passed to method. Only valid if method is a class.
         
-        :param gdkwarg (dict): arguments to be passed to getdist.
+        :param gdkwargs (dict): arguments to be passed to getdist.
 
         :param verbose: chattiness of the run
         
@@ -412,7 +449,7 @@ class MCEvidence(object):
                 method=self.method.Sampler(nsamples=self.nsamples)                                 
                 
         #======== By this line we expect only chains either in file or dict ====
-        self.gd = MCSamples(method,debug=verbose>1,ndim=ndim,**gdkwarg)
+        self.gd = MCSamples(method,debug=verbose>1,**gdkwargs)
 
         if isfunc:
             #try:
@@ -506,9 +543,10 @@ class MCEvidence(object):
     def get_samples(self,nsamples,istart=0,rand=False):    
         # If we are reading chain, it will be handled here 
         # istart -  will set row index to start getting the samples 
+
+        ntot=self.gd.get_shape()[0]
         
         if rand and not self.brange is None:
-            ntot=self.method['samples'].shape[0]
             if nsamples>ntot:
                 self.logger.error('nsamples=%s, ntotal_chian=%s'%(nsamples,ntot))
                 raise
@@ -517,6 +555,7 @@ class MCEvidence(object):
         else:
             idx=np.arange(istart,nsamples+istart)
 
+        self.logger.info('requested nsamples=%s, ntotal_chian=%s'%(nsamples,ntot))
         s,lnp,w=self.gd.arrays()            
                 
         return s[idx,0:self.ndim],lnp[idx],w[idx]
@@ -664,10 +703,12 @@ class MCEvidence(object):
                 amax = dotp/(S*k+1.0)
     
                 # Maximum likelihood estimator for the evidence
-                SumW     = np.sum(weight)
+                SumW     = np.sum(self.gd.adjusted_weights)
+                #print('********sumW=',SumW,np.sum(weight))
                 MLE[ipow,k] = math.log(SumW*amax*Jacobian) + logLmax - logPriorVolume
 
                 #print('SumW,S,amax,Jacobian,logLmax,logPriorVolume,MLE:',SumW,S,amax,Jacobian,logLmax,logPriorVolume,MLE[ipow,k])
+                #print('---')
                 # Output is: for each sample size (S), compute the evidence for kmax-1 different values of k.
                 # Final columm gives the evidence in units of the analytic value.
                 # The values for different k are clearly not independent. If ndim is large, k=1 does best.
