@@ -50,6 +50,9 @@ __license__ = "MIT"
 __version__ = "0.1.1"
 __status__ = "Development"
 
+# Seed the random generator to set the state to fixed value
+#np.random.seed(1)
+
 try:
     '''
     If getdist is installed, use that to reach chains.
@@ -59,6 +62,7 @@ try:
     from getdist import plots, IniFile
     import getdist as gd
 
+    raise 
     #====================================
     #      Getdist wrapper
     #====================================    
@@ -193,15 +197,18 @@ try:
                 self.logger.info('Thinning not possible. Weight must be interger to apply thinning.')
 
         def thin_poisson(self,thinfrac=0.1,nthin=None):
-            try:
-                w=self.samples.weights*thinfrac                
-                thin_ix=np.where(w>0)[0]
-                logger.info('Thinning with thinfrac={}. new_nsamples={},old_nsamples={}'.format(thinfrac,len(thin_ix),len(thin_ix)))
-                self.samples.setSamples(self.samples.samples[thin_ix, :],
-                                        self.samples.loglikes[thin_ix],
-                                        w[thin_ix]) #.makeSingle()
-            except:
-                self.logger.info('Poisson based thinning not possible.')
+            #try:
+            w=self.samples.weights*thinfrac
+            new_w=np.array([float(np.random.poisson(x)) for x in w])
+            thin_ix=np.where(new_w>0)[0]
+            logger.info('Thinning with thinfrac={}. new_nsamples={},old_nsamples={}'.format(thinfrac,len(thin_ix),len(w)))
+            self.samples.setSamples(self.samples.samples[thin_ix, :],
+                                    self.samples.loglikes[thin_ix],
+                                    new_w[thin_ix]) #.makeSingle()
+            self.adjusted_weights=self.samples.weights
+            
+            #except:
+            #    self.logger.info('Poisson based thinning not possible.')
 
         def removeBurn(self,remove=0.2):
             self.samples.removeBurn(remove)
@@ -311,14 +318,19 @@ except:
                 self.logger.info('Thinning not possible.')
         
         def thin_poisson(self,thinfrac=0.1,nthin=None):
-            try:
-                w=self.weights*thinfrac                
-                thin_ix=np.where(w>0)
-                self.samples=self.samples[thin_ix, :]
-                self.loglikes=self.loglikes[thin_ix]
-                self.weights=self.weights[thin_ix]                
-            except:
-                self.logger.info('Thinning not possible.')
+            #try:
+            w=self.weights*thinfrac
+            new_w=np.array([float(np.random.poisson(x)) for x in w])
+            thin_ix=np.where(new_w>0)[0]
+
+            self.samples=self.samples[thin_ix, :]
+            self.loglikes=self.loglikes[thin_ix]
+            self.weights=new_w[thin_ix]
+            self.adjusted_weights=self.weights.copy()
+            
+            logger.info('Thinning with thinfrac={}. new_nsamples={},old_nsamples={}'.format(thinfrac,len(thin_ix),len(w)))            
+            #except:
+            #    self.logger.info('Thinning not possible.')
 
         def removeBurn(self,remove=0):
             nstart=remove
@@ -451,6 +463,15 @@ class MCEvidence(object):
         #======== By this line we expect only chains either in file or dict ====
         self.gd = MCSamples(method,debug=verbose>1,**gdkwargs)
 
+        if burnlen>0:
+            _=self.gd.removeBurn(remove=burnlen)
+        if thinlen>0:
+            if thinlen<1:
+                self.logger.info('calling poisson_thin ..')
+                _=self.gd.thin_poisson(thinlen)
+            else:
+                _=self.gd.thin(nthin=thinlen)                
+
         if isfunc:
             #try:
             self.gd.importance_sample(isfunc)
@@ -461,13 +482,6 @@ class MCEvidence(object):
         self.info['Nsamples_read']=self.gd.get_shape()[0]
         self.info['Nparams_read']=self.gd.get_shape()[1]
         #
-        if burnlen>0:
-            _=self.gd.removeBurn(remove=burnlen)
-        if thinlen>0:
-            if thinlen<1:
-                _=self.gd.thin_poisson(thinlen)
-            else:
-                _=self.gd.thin(nthin=thinlen)                
 
         #after burn-in and thinning
         self.nsample = self.gd.get_shape()[0]            
@@ -734,7 +748,7 @@ class MCEvidence(object):
 
         if verbose>0:
             print('')
-            print('MLE[k=(1,2,3,4)] = ',MLE)
+            print('Evidence[k=(1,2,3,4)] = ',MLE)
             print('')        
         
         if info:
