@@ -40,6 +40,7 @@ import scipy.special as sp
 from numpy.linalg import inv
 from numpy.linalg import det
 import logging
+from argparse import ArgumentParser
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -172,7 +173,7 @@ try:
             #self.samples=[]
             #for f in rootname:
             idchain=kwargs.pop('idchain', 0)
-            print('mcsample: rootname, idchain',rootname,idchain)
+            self.logger.debug('mcsample: rootname, idchain',rootname,idchain)
             self.samples=gd.loadMCSamples(rootname,**kwargs)#.makeSingle()
             if idchain>0:
                 self.samples.samples=self.samples.getSeparateChains()[idchain-1].samples
@@ -717,10 +718,13 @@ class MCEvidence(object):
     
                 # Maximum likelihood estimator for the evidence
                 SumW     = np.sum(self.gd.adjusted_weights)
-                print('********sumW=',SumW,np.sum(weight))
+                self.logger.debug('********sumW={0},np.sum(Weight)={1}'.format(SumW,np.sum(weight)))
                 MLE[ipow,k] = math.log(SumW*amax*Jacobian) + logLmax - logPriorVolume
 
-                print('SumW,S,amax,Jacobian,logLmax,logPriorVolume,MLE:',SumW,S,amax,Jacobian,logLmax,logPriorVolume,MLE[ipow,k])
+                self.logger.debug('SumW={} \t S={} '.format(SumW,S))
+                self.logger.debug('amax={} \t Jacobian={}'.format(amax,Jacobian))
+                self.logger.debug('logLmax={} \t logPriorVolume={}'.format(logLmax,logPriorVolume))
+                self.logger.debug('MLE={}:'.format(MLE[ipow,k]))
                 print('---')
                 # Output is: for each sample size (S), compute the evidence for kmax-1 different values of k.
                 # Final columm gives the evidence in units of the analytic value.
@@ -746,10 +750,9 @@ class MCEvidence(object):
             MLE=MLE[:,1:]
 
         if verbose>0:
+            for k in range(1,self.kmax):
+                print('   ln(B)[k={}] = {}'.format(k,MLE[k-1]))
             print('')
-            print('MLE[k=(1,2,3,4)] = ',MLE)
-            print('')        
-        
         if info:
             return MLE, self.info
         else:  
@@ -757,26 +760,60 @@ class MCEvidence(object):
     
            
 #===============================================
+#===============================================
+
+
+def iscosmo_param(p,cosmo_params=None):
+    '''
+    check if parameter 'p' is cosmological or nuisance
+    '''
+    if cosmo_params is None:
+        #list of cosmology parameters
+        cosmo_params=['omegabh2','omegach2','theta','tau','omegak','mnu','meffsterile','w','wa',
+                      'nnu','yhe','alpha1','deltazrei','Alens','Alensf','fdm','logA','ns','nrun',
+                      'nrunrun','r','nt','ntrun','Aphiphi']        
+    return p in cosmo_params
+
+def params_info(fname,cosmo=False):
+    '''
+    Extract parameter names, ranges, and prior space volume
+    from CosmoMC *.ranges file
+    '''
+    logger.info('getting params info from %s.ranges'%fname)
+    par=np.genfromtxt(fname+'.ranges',dtype=None,names=('name','min','max'))#,unpack=True)
+    parName=par['name']
+    parMin=par['min']
+    parMax=par['max']
+    
+    parMC={'name':[],'min':[],'max':[],'range':[]}
+    for p,pmin,pmax in zip(parName, parMin,parMax):
+        #if parameter info is to be computed only for cosmological parameters
+        pcond=iscosmo_param(p) if cosmo else True 
+        #now get info
+        if not np.isclose(pmax,pmin) and pcond:
+            parMC['name'].append(p)
+            parMC['min'].append(pmin)
+            parMC['max'].append(pmax)
+            parMC['range'].append(np.abs(pmax-pmin))
+    #
+    parMC['str']=','.join(parMC['name'])
+    parMC['ndim']=len(parMC['name'])
+    parMC['volume']=np.array(parMC['range']).prod()
+    
+    return parMC
+
+#==============================================
 
 if __name__ == '__main__':
-    if len(sys.argv) > 1:
-        method=sys.argv[1]
-    else:
-        print("")        
-        print('        Usage: python MCEvidence.py <path/to/chain/file>')
-        print("")
-        print('        Optionaly the first argument can be a ')
-        print('          file name to python class with "sampler" method')
-        print("")
-        sys.exit()
 
+    print('---')
     #---------------------------------------
     #---- Extract command line arguments ---
     #---------------------------------------
-    parser = ArgumentParser(description='Planck Chains MCEvidence.')
+    parser = ArgumentParser(description='Planck Chains MCEvidence. Returns the log Bayesian Evidence computed using the kth NN')
 
     # positional args
-    parser.add_argument("method",metavar='method',help='Root filename for MCMC chains or or python class filename')
+    parser.add_argument("root_name",help='Root filename for MCMC chains or python class filename')
                         
     # optional args
     parser.add_argument("-k", "--kmax",
@@ -810,21 +847,39 @@ if __name__ == '__main__':
                         type=int,
                         help="increase output verbosity")
 
+    parser.add_argument('--cosmo', help='flag to compute prior_volume using cosmological parameters only',
+                        action='store_true')
+
     args = parser.parse_args()
 
     #-----------------------------
     #------ control parameters----
     #-----------------------------
+    method=args.root_name
     kmax=args.kmax
     idchain=args.idchain 
-    prior_volume=args.prior_volume
     ndim=args.ndim
     burnfrac=args.burnfrac
     thinfrac=args.thinfrac
     verbose=args.verbose
     
-    print('Using Chain: ',method)
+    if verbose>1: logging.basicConfig(level=logging.DEBUG)
+    try:
+        parMC=params_info(method,cosmo=args.verbose)
+        if verbose>1: print(parMC)
+        prior_volume=parMC['volume']
+        logger.info('getting prior volume using cosmomc *.ranges output')
+        logger.info('prior_volume=%s'%prior_volume)
+    except:
+        raise
+        #print('setting prior_volume=1')
+        #prior_volume=1
+    print()
+    print('Using file: ',method)    
     mce=MCEvidence(method,ndim=ndim,priorvolume=prior_volume,idchain=idchain,
                                     kmax=kmax,verbose=verbose,burnlen=burnfrac,
                                     thinlen=thinfrac)
     mce.evidence()
+
+    print('* ln(B)[k] is the natural logarithm of the Baysian evidence estimated using the kth Nearest Neighbour.')
+    print('')
