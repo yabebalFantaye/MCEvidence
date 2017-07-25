@@ -62,7 +62,6 @@ try:
     from getdist import plots, IniFile
     import getdist as gd
 
-    raise 
     #====================================
     #      Getdist wrapper
     #====================================    
