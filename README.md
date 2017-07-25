@@ -28,11 +28,11 @@ The output is:
                          [-t THINFRAC] [-v VERBOSE] [--cosmo]
 			                      root_name
 
-   Planck Chains MCEvidence. Returns the log Bayesian Evidence computed using the
-   kth NN
+    Planck Chains MCEvidence. Returns the log Bayesian Evidence computed using the
+    kth NN.
 
-   positional arguments:
-     root_name             Root filename for MCMC chains or python class filename
+     positional arguments:
+       root_name             Root filename for MCMC chains or python class filename
 
      optional arguments:
        -h, --help            show this help message and exit
@@ -55,4 +55,4 @@ The output is:
 
 # If you use the code, please cite the following paper
 
- .. [1] [Heavens et. al. (2017)](http://adsabs.harvard.edu/abs/2016arXiv161207151P)
+ .. [1] [Heavens et. al. (2017)](http://adsabs.harvard.edu/abs/2017arXiv170403472H)
