@@ -50,8 +50,7 @@ __license__ = "MIT"
 __version__ = "0.1.1"
 __status__ = "Development"
 
-# Seed the random generator to set the state to fixed value
-#np.random.seed(1)
+np.random.seed(1)
 
 try:
     '''
@@ -62,6 +61,7 @@ try:
     from getdist import plots, IniFile
     import getdist as gd
 
+    #raise 
     #====================================
     #      Getdist wrapper
     #====================================    
@@ -717,11 +717,11 @@ class MCEvidence(object):
     
                 # Maximum likelihood estimator for the evidence
                 SumW     = np.sum(self.gd.adjusted_weights)
-                #print('********sumW=',SumW,np.sum(weight))
+                print('********sumW=',SumW,np.sum(weight))
                 MLE[ipow,k] = math.log(SumW*amax*Jacobian) + logLmax - logPriorVolume
 
-                #print('SumW,S,amax,Jacobian,logLmax,logPriorVolume,MLE:',SumW,S,amax,Jacobian,logLmax,logPriorVolume,MLE[ipow,k])
-                #print('---')
+                print('SumW,S,amax,Jacobian,logLmax,logPriorVolume,MLE:',SumW,S,amax,Jacobian,logLmax,logPriorVolume,MLE[ipow,k])
+                print('---')
                 # Output is: for each sample size (S), compute the evidence for kmax-1 different values of k.
                 # Final columm gives the evidence in units of the analytic value.
                 # The values for different k are clearly not independent. If ndim is large, k=1 does best.
@@ -747,7 +747,7 @@ class MCEvidence(object):
 
         if verbose>0:
             print('')
-            print('Evidence[k=(1,2,3,4)] = ',MLE)
+            print('MLE[k=(1,2,3,4)] = ',MLE)
             print('')        
         
         if info:
@@ -770,11 +770,61 @@ if __name__ == '__main__':
         print("")
         sys.exit()
 
-    if len(sys.argv) > 2:
-        verbose=sys.argv[2]
-    else:
-        verbose=1
+    #---------------------------------------
+    #---- Extract command line arguments ---
+    #---------------------------------------
+    parser = ArgumentParser(description='Planck Chains MCEvidence.')
+
+    # positional args
+    parser.add_argument("method",metavar='method',help='Root filename for MCMC chains or or python class filename')
+                        
+    # optional args
+    parser.add_argument("-k", "--kmax",
+                        dest="kmax",
+                        default=2,
+                        type=int,
+                        help="scikit maximum K-NN ")
+    parser.add_argument("-ic", "--idchain",
+                        dest="idchain",
+                        default=0,
+                        type=int,
+                        help="Which chains to use - the id e.g 1 means read only *_1.txt (default=None - use all available) ")
+    parser.add_argument("-np", "--ndim",
+                        dest="ndim",
+                        default=None,
+                        type=int,                    
+                        help="How many parameters to use (default=None - use all params) ")
+    parser.add_argument("-b","--burnfrac", "--burnin","--remove",
+                        dest="burnfrac",
+                        default=0,
+                        type=float,                    
+                        help="Burn-in fraction")
+    parser.add_argument("-t","--thin", "--thinfrac",
+                        dest="thinfrac",
+                        default=0,
+                        type=float,
+                        help="Thinning fraction")
+    parser.add_argument("-v", "--verbose",
+                        dest="verbose",
+                        default=1,
+                        type=int,
+                        help="increase output verbosity")
+
+    args = parser.parse_args()
+
+    #-----------------------------
+    #------ control parameters----
+    #-----------------------------
+    kmax=args.kmax
+    idchain=args.idchain 
+    prior_volume=args.prior_volume
+    ndim=args.ndim
+    burnfrac=args.burnfrac
+    thinfrac=args.thinfrac
+    verbose=args.verbose
     
     print('Using Chain: ',method)
-    mce=MCEvidence(method,verbose=verbose)
+    mce=MCEvidence(method,ndim=ndim,priorvolume=prior_volume,idchain=idchain,
+                                    kmax=kmax,verbose=verbose,burnlen=burnfrac,
+                                    thinlen=thinfrac)
     mce.evidence()
