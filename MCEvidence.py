@@ -117,7 +117,7 @@ try:
                self.logger.error('first argument to samples2getdist should be a string or dict.')
                raise
 
-            # a copy of the weights that can be altered to
+            # a copy of the weights that can be altered
             # independently to the original weights
             self.adjusted_weights=np.copy(self.samples.weights)
             #
@@ -173,7 +173,7 @@ try:
             #self.samples=[]
             #for f in rootname:
             idchain=kwargs.pop('idchain', 0)
-            self.logger.debug('mcsample: rootname, idchain',rootname,idchain)
+            self.logger.info('mcsample: rootname={}, idchain={}'.format(rootname,idchain))
             self.samples=gd.loadMCSamples(rootname,**kwargs)#.makeSingle()
             if idchain>0:
                 self.samples.samples=self.samples.getSeparateChains()[idchain-1].samples
@@ -185,27 +185,30 @@ try:
             #     print('loading parameter names from: ',basename)
             #     self.samples.setParamNames(basename)
                 
-        def thin(self,nminwin=1,nthin=None):
-            if nthin is None:
+        def thin(self,nminwin=1,nthin=0):
+            if nthin < 0:
                 ncorr=max(1,int(self.samples.getCorrelationLength(nminwin)))
             else:
                 ncorr=nthin
             self.logger.info('Acutocorrelation Length: ncorr=%s'%ncorr)
             try:
+                norig=len(self.samples.weights)
                 self.samples.thin(ncorr)
+                nnew=len(self.samples.weights)
+                logger.info('Thinning with thin length={} #old_chain={},#new_chain={}'.format(ncorr,norig,nnew))
             except:
                 self.logger.info('Thinning not possible. Weight must be interger to apply thinning.')
 
         def thin_poisson(self,thinfrac=0.1,nthin=None):
             #try:
-            w=self.samples.weights*thinfrac
+            w=self.samples.weights*(1.0-thinfrac)
             new_w=np.array([float(np.random.poisson(x)) for x in w])
             thin_ix=np.where(new_w>0)[0]
             logger.info('Thinning with thinfrac={}. new_nsamples={},old_nsamples={}'.format(thinfrac,len(thin_ix),len(w)))
             self.samples.setSamples(self.samples.samples[thin_ix, :],
                                     self.samples.loglikes[thin_ix],
                                     new_w[thin_ix]) #.makeSingle()
-            self.adjusted_weights=self.samples.weights
+            self.adjusted_weights=np.copy(self.samples.weights)
             
             #except:
             #    self.logger.info('Poisson based thinning not possible.')
@@ -249,7 +252,7 @@ except:
             elif isinstance(str_or_dict,dict):                
                 d=str_or_dict
             else:
-               self.logger.info('Passed first argument type is: ',type(str_or_dict))                
+               self.logger.info('Passed first argument type is: %s'%type(str_or_dict))                
                self.logger.error('first argument to samples2getdist should be a string or dict.')
                raise
            
@@ -319,7 +322,7 @@ except:
         
         def thin_poisson(self,thinfrac=0.1,nthin=None):
             #try:
-            w=self.weights*thinfrac
+            w=self.weights*(1.0-thinfrac)
             new_w=np.array([float(np.random.poisson(x)) for x in w])
             thin_ix=np.where(new_w>0)[0]
 
@@ -466,11 +469,14 @@ class MCEvidence(object):
         if burnlen>0:
             _=self.gd.removeBurn(remove=burnlen)
         if thinlen>0:
-            if thinlen<1:
-                self.logger.info('calling poisson_thin ..')
-                _=self.gd.thin_poisson(thinlen)
+            if thinlen>1:
+                #thinfrac=thinlen*1.0/self.gd.get_shape()[0]
+                self.logger.info('calling poisson_thin length=%s'%thinlen)
+                _=self.gd.thin(nthin=thinlen)
             else:
-                _=self.gd.thin(nthin=thinlen)                
+                thinfrac=thinlen
+                self.logger.info('calling poisson_thin which thin fraction=%s'%thinfrac)
+                _=self.gd.thin_poisson(thinfrac)
 
         if isfunc:
             #try:
