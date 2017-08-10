@@ -53,6 +53,92 @@ __status__ = "Development"
 
 np.random.seed(1)
 
+def weighted_thin(weights,thin_unit):
+    '''
+    Given a weight array, perform thinning.
+    If the all weights are equal, this should 
+    be equivalent to selecting every N/((1-thinfrac)*N)
+    where N=len(weights).
+    '''
+    
+    N=len(weights)
+    if thin_unit==0: return range(N),weights
+        
+    if thin_unit<1:
+        N2=np.int(N*(1.0-thin_unit))
+    else:
+        N2=N//thin_unit
+    
+    #bin the weight index to have the desired length
+    #this defines the bin edges
+    bins = np.linspace(-1, N, N2+1) 
+    #this collects the indices of the weight array in each bin
+    ind = np.digitize(np.arange(N), bins)  
+    #this gets the maximum weight in each bin
+    thin_ix=pd.Series(weights).groupby(ind).idxmax().tolist()
+    thin_ix=np.array(thin_ix,dtype=np.intp)
+
+    #print('ind=',ind[0:100])
+    #print('bins=',np.array(bins[0:100],dtype=np.intp))
+    #print('thin_ix=',thin_ix[0:100])
+    #print('old_weight',weights[1:100])
+    #print('new_weight',weights[thin_ix][0:99])
+    #get the new weight by using weighted histogram
+    #new_weight, _=np.histogram(np.arange(N), bins=N2, normed=False, weights=weights)    
+    return {'ix':thin_ix, 'w':weights[thin_ix]}
+
+def thin_indices(weights, factor):
+    """
+    Ref: 
+    http://getdist.readthedocs.io/en/latest/_modules/getdist/chains.html#WeightedSamples.thin
+    
+    Indices to make single weight 1 samples. Assumes integer weights.
+
+    :param factor: The factor to thin by, should be int.
+    :param weights: The weights to thin, 
+    :return: array of indices of samples to keep
+    """
+    numrows = len(weights)
+    norm1 = np.sum(weights)
+    weights = weights.astype(np.int)
+    norm = np.sum(weights)
+
+    if abs(norm - norm1) > 1e-4:
+        print('Can only thin with integer weights')
+        raise 
+    if factor != int(factor):
+        print('Thin factor must be integer')
+        raise 
+    factor = int(factor)
+    if factor >= np.max(weights):
+        cumsum = np.cumsum(weights) // factor
+        # noinspection PyTupleAssignmentBalance
+        _, thin_ix = np.unique(cumsum, return_index=True)
+    else:
+        tot = 0
+        i = 0
+        thin_ix = np.empty(norm // factor, dtype=np.int)
+        ix = 0
+        mult = weights[i]
+        while i < numrows:
+            if mult + tot < factor:
+                tot += mult
+                i += 1
+                if i < numrows: mult = weights[i]
+            else:
+                thin_ix[ix] = i
+                ix += 1
+                if mult == factor - tot:
+                    i += 1
+                    if i < numrows: mult = weights[i]
+                else:
+                    mult -= (factor - tot)
+                tot = 0
+
+    return {'ix':thin_ix,'w':weights[thin_ix]}
+
+#========== 
+
 try:
     '''
     If getdist is installed, use that to reach chains.
@@ -188,26 +274,45 @@ try:
         def thin(self,nminwin=1,nthin=0):
             if nthin < 0:
                 ncorr=max(1,int(self.samples.getCorrelationLength(nminwin)))
+                self.logger.info('Acutocorrelation Length: ncorr=%s'%ncorr)                
             else:
                 ncorr=nthin
-            self.logger.info('Acutocorrelation Length: ncorr=%s'%ncorr)
+
             try:
+            #if True:
                 norig=len(self.samples.weights)
-                self.samples.thin(ncorr)
+                #get weighted thin
+                try:
+                    d = thin_indices(self.samples.weights,ncorr)
+                except:
+                    d = weighted_thin(self.samples.weights,ncorr)
+                new_w=d['w']
+                thin_ix=d['ix']
+                #apply thinning
+                #print('thin_ix',type(thin_ix),type(thin_ix[0]),len(thin_ix),thin_ix[0:10])
+                self.samples.setSamples(self.samples.samples[thin_ix, :],
+                                            self.samples.weights[thin_ix],
+                                            self.samples.loglikes[thin_ix])
+                #copy the new weight
+                self.adjusted_weights=np.copy(self.samples.weights)
+            
+                #self.samples.thin(ncorr)
                 nnew=len(self.samples.weights)
                 logger.info('Thinning with thin length={} #old_chain={},#new_chain={}'.format(ncorr,norig,nnew))
             except:
+            #else:
                 self.logger.info('Thinning not possible. Weight must be interger to apply thinning.')
 
         def thin_poisson(self,thinfrac=0.1,nthin=None):
+            '''Obsolete: This will be deleted in the future '''
             #try:
             w=self.samples.weights*(1.0-thinfrac)
             new_w=np.array([float(np.random.poisson(x)) for x in w])
             thin_ix=np.where(new_w>0)[0]
             logger.info('Thinning with thinfrac={}. new_nsamples={},old_nsamples={}'.format(thinfrac,len(thin_ix),len(w)))
             self.samples.setSamples(self.samples.samples[thin_ix, :],
-                                    self.samples.loglikes[thin_ix],
-                                    new_w[thin_ix]) #.makeSingle()
+                                        new_w[thin_ix],
+                                    self.samples.loglikes[thin_ix]) #.makeSingle()
             self.adjusted_weights=np.copy(self.samples.weights)
             
             #except:
@@ -314,14 +419,30 @@ except:
 
         def thin(self,nthin=1):
             try:
-                self.samples=self.samples[0::nthin, :]
-                self.loglikes=self.loglikes[0::nthin]
-                self.weights=self.weights[0::nthin]                
+                norig=len(self.weights)
+                #call weighted thinning
+                try:
+                    #if weights are integers, use getdist algorithm
+                    d = thin_indices(self.weights,ncorr)
+                except:
+                    #if weights are not integers, use internal algorithm
+                    d = weighted_thin(self.weights,ncorr)
+                    
+                self.weights=d['w']
+                thin_ix=d['ix']
+                
+                #now thin samples and related quantities
+                self.samples=self.samples[thin_ix, :]
+                self.loglikes=self.loglikes[thin_ix]
+
+                self.adjusted_weights=self.weights.copy()
+                
+                nnew=len(self.weights)
+                logger.info('Thinning with thin length={} #old_chain={},#new_chain={}'.format(nthin,norig,nnew))                
             except:
                 self.logger.info('Thinning not possible.')
         
         def thin_poisson(self,thinfrac=0.1,nthin=None):
-            #try:
             w=self.weights*(1.0-thinfrac)
             new_w=np.array([float(np.random.poisson(x)) for x in w])
             thin_ix=np.where(new_w>0)[0]
@@ -469,14 +590,12 @@ class MCEvidence(object):
         if burnlen>0:
             _=self.gd.removeBurn(remove=burnlen)
         if thinlen>0:
+            self.logger.info('applying weighted thinning with thin length=%s'%thinlen)
             if thinlen>1:
-                #thinfrac=thinlen*1.0/self.gd.get_shape()[0]
-                self.logger.info('calling poisson_thin length=%s'%thinlen)
                 _=self.gd.thin(nthin=thinlen)
             else:
-                thinfrac=thinlen
-                self.logger.info('calling poisson_thin which thin fraction=%s'%thinfrac)
-                _=self.gd.thin_poisson(thinfrac)
+                _=self.gd.thin_poisson(thinfrac=thinlen)
+
 
         if isfunc:
             #try:
