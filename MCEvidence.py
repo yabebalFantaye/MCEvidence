@@ -48,10 +48,32 @@ logger = logging.getLogger(__name__)
 __author__ = "Yabebal Fantaye"
 __email__ = "yabi@aims.ac.za"
 __license__ = "MIT"
-__version__ = "0.1.1"
+__version__ = "0.1"
 __status__ = "Development"
 
+desc='Planck Chains MCEvidence. Returns the log Bayesian Evidence computed using the kth NN'
+cite='''
+**
+When using this code in published work, please cite the following paper: **
+Heavens et. al. (2017) 
+Marginal Likelihoods from Monte Carlo Markov Chains
+https://arxiv.org/abs/1704.03472
+''' 
+
 np.random.seed(1)
+
+def poisson_thin(weights,thin_retain_frac):
+    '''
+    Given a weight array and thinning retain fraction, perform thinning.
+    The algorithm works by randomly sampling from a Poisson distribution 
+    with mean equal to the weight.
+    '''    
+    w=weights*thin_retain_frac
+    new_w=np.array([float(np.random.poisson(x)) for x in w])
+    thin_ix=np.where(new_w>0)[0]
+    logger.info('Thinning with Poisson Sampling: thinfrac={}. new_nsamples={},old_nsamples={}'.format(thin_unit,len(thin_ix),len(w)))
+
+    return {'ix':thin_ix, 'w':weights[thin_ix]}
 
 def weighted_thin(weights,thin_unit):
     '''
@@ -77,14 +99,8 @@ def weighted_thin(weights,thin_unit):
     #this gets the maximum weight in each bin
     thin_ix=pd.Series(weights).groupby(ind).idxmax().tolist()
     thin_ix=np.array(thin_ix,dtype=np.intp)
+    logger.info('Thinning with weighted binning: thinfrac={}. new_nsamples={},old_nsamples={}'.format(thin_unit,len(thin_ix),len(w)))
 
-    #print('ind=',ind[0:100])
-    #print('bins=',np.array(bins[0:100],dtype=np.intp))
-    #print('thin_ix=',thin_ix[0:100])
-    #print('old_weight',weights[1:100])
-    #print('new_weight',weights[thin_ix][0:99])
-    #get the new weight by using weighted histogram
-    #new_weight, _=np.histogram(np.arange(N), bins=N2, normed=False, weights=weights)    
     return {'ix':thin_ix, 'w':weights[thin_ix]}
 
 def thin_indices(weights, factor):
@@ -278,16 +294,26 @@ try:
             else:
                 ncorr=nthin
 
+            if ncorr==1:
+                return
+            
             try:
             #if True:
                 norig=len(self.samples.weights)
-                #get weighted thin
-                try:
-                    d = thin_indices(self.samples.weights,ncorr)
-                except:
-                    d = weighted_thin(self.samples.weights,ncorr)
-                new_w=d['w']
-                thin_ix=d['ix']
+
+                if ncorr<1:
+                    #poisson thinning
+                    ixw_dict = poisson_thin(self.samples.weights,ncorr)
+                else:
+                    #get weighted thin
+                    try:
+                        ixw_dict = thin_indices(self.samples.weights,ncorr)
+                    except:
+                        ixw_dict = weighted_thin(self.samples.weights,ncorr)
+                #--
+                new_w=ixw_dict['w']
+                thin_ix=ixw_dict['ix']
+                
                 #apply thinning
                 #print('thin_ix',type(thin_ix),type(thin_ix[0]),len(thin_ix),thin_ix[0:10])
                 self.samples.setSamples(self.samples.samples[thin_ix, :],
@@ -302,22 +328,8 @@ try:
             except:
             #else:
                 self.logger.info('Thinning not possible. Weight must be interger to apply thinning.')
-
-        def thin_poisson(self,thinfrac=0.1,nthin=None):
-            '''Obsolete: This will be deleted in the future '''
-            #try:
-            w=self.samples.weights*(1.0-thinfrac)
-            new_w=np.array([float(np.random.poisson(x)) for x in w])
-            thin_ix=np.where(new_w>0)[0]
-            logger.info('Thinning with thinfrac={}. new_nsamples={},old_nsamples={}'.format(thinfrac,len(thin_ix),len(w)))
-            self.samples.setSamples(self.samples.samples[thin_ix, :],
-                                        new_w[thin_ix],
-                                    self.samples.loglikes[thin_ix]) #.makeSingle()
-            self.adjusted_weights=np.copy(self.samples.weights)
+                raise
             
-            #except:
-            #    self.logger.info('Poisson based thinning not possible.')
-
         def removeBurn(self,remove=0.2):
             self.samples.removeBurn(remove)
             
@@ -418,18 +430,25 @@ except:
             return chain_dict
 
         def thin(self,nthin=1):
+            if nthin==1:
+                return
+            
             try:
                 norig=len(self.weights)
-                #call weighted thinning
-                try:
-                    #if weights are integers, use getdist algorithm
-                    d = thin_indices(self.weights,ncorr)
-                except:
-                    #if weights are not integers, use internal algorithm
-                    d = weighted_thin(self.weights,ncorr)
+
+                if nthin<1:
+                    ixw_dict = poisson_thin(self.weights,nthin)
+                else:
+                    #call weighted thinning                    
+                    try:
+                        #if weights are integers, use getdist algorithm
+                        ixw_dict = thin_indices(self.weights,ncorr)
+                    except:
+                        #if weights are not integers, use internal algorithm
+                        ixw_dict = weighted_thin(self.weights,ncorr)
                     
-                self.weights=d['w']
-                thin_ix=d['ix']
+                self.weights=ixw_dict['w']
+                thin_ix=ixw_dict['ix']
                 
                 #now thin samples and related quantities
                 self.samples=self.samples[thin_ix, :]
@@ -441,20 +460,7 @@ except:
                 logger.info('Thinning with thin length={} #old_chain={},#new_chain={}'.format(nthin,norig,nnew))                
             except:
                 self.logger.info('Thinning not possible.')
-        
-        def thin_poisson(self,thinfrac=0.1,nthin=None):
-            w=self.weights*(1.0-thinfrac)
-            new_w=np.array([float(np.random.poisson(x)) for x in w])
-            thin_ix=np.where(new_w>0)[0]
-
-            self.samples=self.samples[thin_ix, :]
-            self.loglikes=self.loglikes[thin_ix]
-            self.weights=new_w[thin_ix]
-            self.adjusted_weights=self.weights.copy()
-            
-            logger.info('Thinning with thinfrac={}. new_nsamples={},old_nsamples={}'.format(thinfrac,len(thin_ix),len(w)))            
-            #except:
-            #    self.logger.info('Thinning not possible.')
+                raise
 
         def removeBurn(self,remove=0):
             nstart=remove
@@ -589,13 +595,9 @@ class MCEvidence(object):
 
         if burnlen>0:
             _=self.gd.removeBurn(remove=burnlen)
-        if thinlen>0:
+        if np.abs(thinlen)>0:
             self.logger.info('applying weighted thinning with thin length=%s'%thinlen)
-            if thinlen>1:
-                _=self.gd.thin(nthin=thinlen)
-            else:
-                _=self.gd.thin_poisson(thinfrac=thinlen)
-
+            _=self.gd.thin(nthin=thinlen)        
 
         if isfunc:
             #try:
@@ -935,18 +937,20 @@ if __name__ == '__main__':
     #---------------------------------------
     #---- Extract command line arguments ---
     #---------------------------------------
-    parser = ArgumentParser(description='Planck Chains MCEvidence. Returns the log Bayesian Evidence computed using the kth NN')
+    parser = ArgumentParser(prog=sys.argv[0],
+                                description=desc,
+                                epilog=cite)
 
     # positional args
     parser.add_argument("root_name",help='Root filename for MCMC chains or python class filename')
                         
     # optional args
-    parser.add_argument("-k", "--kmax",
+    parser.add_argument("-k","--kmax",
                         dest="kmax",
                         default=2,
                         type=int,
                         help="scikit maximum K-NN ")
-    parser.add_argument("-ic", "--idchain",
+    parser.add_argument("-ic","--idchain",
                         dest="idchain",
                         default=0,
                         type=int,
@@ -956,16 +960,20 @@ if __name__ == '__main__':
                         default=None,
                         type=int,                    
                         help="How many parameters to use (default=None - use all params) ")
-    parser.add_argument("-b","--burnfrac", "--burnin","--remove",
+    parser.add_argument("--burn","--burnfrac",
                         dest="burnfrac",
                         default=0,
                         type=float,                    
-                        help="Burn-in fraction")
-    parser.add_argument("-t","--thin", "--thinfrac",
+                        help="Burn-in fraction. burnfrac<1 is interpreted as fraction e.g. 0.3 - 30%")
+    parser.add_argument("--thin", "--thinfrac",
                         dest="thinfrac",
                         default=0,
                         type=float,
-                        help="Thinning fraction")
+                        help='''Thinning fraction. 
+                             If 0<thinfrac<1, MCMC weights are adjusted based on Poisson sampling
+                             If thinfrac>1, weighted thinning based on getdist algorithm 
+                             If thinfrac<0, thinning length will be the autocorrelation length of the chain
+                             ''')
     parser.add_argument("-v", "--verbose",
                         dest="verbose",
                         default=1,
