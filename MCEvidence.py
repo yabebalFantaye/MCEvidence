@@ -71,7 +71,7 @@ def poisson_thin(weights,thin_retain_frac):
     w=weights*thin_retain_frac
     new_w=np.array([float(np.random.poisson(x)) for x in w])
     thin_ix=np.where(new_w>0)[0]
-    logger.info('Thinning with Poisson Sampling: thinfrac={}. new_nsamples={},old_nsamples={}'.format(thin_unit,len(thin_ix),len(w)))
+    logger.info('Thinning with Poisson Sampling: thinfrac={}. new_nsamples={},old_nsamples={}'.format(thin_retain_frac,len(thin_ix),len(w)))
 
     return {'ix':thin_ix, 'w':weights[thin_ix]}
 
@@ -179,6 +179,11 @@ try:
 
             if debug:
                 logging.basicConfig(level=logging.DEBUG)
+                
+            #if not debug: #logging.getLogger()==logging.WARNING:
+            gd.print_load_details=False
+            gd.chains.print_load_details=False
+                
             self.logger = logging.getLogger(__name__)
 
             if isinstance(str_or_dict,str):
@@ -276,7 +281,10 @@ try:
             #for f in rootname:
             idchain=kwargs.pop('idchain', 0)
             self.logger.info('mcsample: rootname={}, idchain={}'.format(rootname,idchain))
+            #print(gd.print_load_details)
+            #print(gd.chains.print_load_details)            
             self.samples=gd.loadMCSamples(rootname,**kwargs)#.makeSingle()
+            #print('**')
             if idchain>0:
                 self.samples.samples=self.samples.getSeparateChains()[idchain-1].samples
                 self.samples.loglikes=self.samples.getSeparateChains()[idchain-1].loglikes
@@ -331,6 +339,7 @@ try:
                 raise
             
         def removeBurn(self,remove=0.2):
+            self.logger.info('Removed %s as burn in' % remove)
             self.samples.removeBurn(remove)
             
         def arrays(self):            
@@ -465,7 +474,7 @@ except:
         def removeBurn(self,remove=0):
             nstart=remove
             if remove<1:
-                self.logger.info('burn-in: Removing {} % of the chain'.format(remove))                
+                self.logger.info('Removed %s as burn in' % remove)
                 nstart=int(len(self.loglikes)*remove)
             else:
                 self.logger.info('burn-in: Removing the first {} rows of the chain'.format(remove))
@@ -526,10 +535,15 @@ class MCEvidence(object):
         
         """
         #
+        logging.basicConfig(level=logging.INFO)        
         self.verbose=verbose
         if debug or verbose>1: logging.basicConfig(level=logging.DEBUG)
-        if verbose==0: logging.basicConfig(level=logging.WARNING)            
+        if verbose==0:
+            logger.setLevel(logging.WARNING)
+            logging.basicConfig(level=logging.WARNING)            
+
         self.logger = logging.getLogger(__name__)
+        #print('log level: ',logging.getLogger().getEffectiveLevel())
         
         self.info={}
         #
@@ -852,23 +866,23 @@ class MCEvidence(object):
                 self.logger.debug('amax={} \t Jacobian={}'.format(amax,Jacobian))
                 self.logger.debug('logLmax={} \t logPriorVolume={}'.format(logLmax,logPriorVolume))
                 self.logger.debug('MLE={}:'.format(MLE[ipow,k]))
-                print('---')
+                #print('---')
                 # Output is: for each sample size (S), compute the evidence for kmax-1 different values of k.
                 # Final columm gives the evidence in units of the analytic value.
                 # The values for different k are clearly not independent. If ndim is large, k=1 does best.
                 if self.brange is None:
                     #print('(mean,min,max) of LogLikelihood: ',fs.mean(),fs.min(),fs.max())
                     if verbose>1:
-                        self.logger.info('k={},nsample={}, dotp={}, median_volume={}, a_max={}, MLE={}'.format( 
+                        self.logger.debug('k={},nsample={}, dotp={}, median_volume={}, a_max={}, MLE={}'.format( 
                             k,S,dotp,statistics.median(volume[:,k]),amax,MLE[ipow,k]))
                 
                 else:
                     if verbose>1:
                         if ipow==0: 
-                            self.logger.info('(iter,mean,min,max) of LogLikelihood: ',ipow,fs.mean(),fs.min(),fs.max())
-                            self.logger.info('-------------------- useful intermediate parameter values ------- ')
-                            self.logger.info('nsample, dotp, median volume, amax, MLE')                
-                        self.logger.info(S,k,dotp,statistics.median(volume[:,k]),amax,MLE[ipow,k])
+                            self.logger.debug('(iter,mean,min,max) of LogLikelihood: ',ipow,fs.mean(),fs.min(),fs.max())
+                            self.logger.debug('-------------------- useful intermediate parameter values ------- ')
+                            self.logger.debug('nsample, dotp, median volume, amax, MLE')                
+                        self.logger.debug(S,k,dotp,statistics.median(volume[:,k]),amax,MLE[ipow,k])
 
         #MLE[:,0] is zero - return only from k=1
         if self.brange is None:
@@ -878,8 +892,8 @@ class MCEvidence(object):
 
         if verbose>0:
             for k in range(1,self.kmax):
-                print('   ln(B)[k={}] = {}'.format(k,MLE[k-1]))
-            print('')
+                self.logger.info('   ln(B)[k={}] = {}'.format(k,math.exp(MLE[k-1])))
+            #print('')
         if info:
             return MLE, self.info
         else:  
