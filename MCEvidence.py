@@ -79,7 +79,7 @@ def weighted_thin(weights,thin_unit):
     '''
     Given a weight array, perform thinning.
     If the all weights are equal, this should 
-    be equivalent to selecting every N/((1-thinfrac)*N)
+    be equivalent to selecting every N/((thinfrac*N)
     where N=len(weights).
     '''
     
@@ -87,7 +87,7 @@ def weighted_thin(weights,thin_unit):
     if thin_unit==0: return range(N),weights
         
     if thin_unit<1:
-        N2=np.int(N*(1.0-thin_unit))
+        N2=np.int(N*thin_unit)
     else:
         N2=N//thin_unit
     
@@ -974,19 +974,19 @@ if __name__ == '__main__':
                         default=None,
                         type=int,                    
                         help="How many parameters to use (default=None - use all params) ")
-    parser.add_argument("--burn","--burnfrac",
-                        dest="burnfrac",
+    parser.add_argument("--burn","--burnlen",
+                        dest="burnlen",
                         default=0,
                         type=float,                    
-                        help="Burn-in fraction. burnfrac<1 is interpreted as fraction e.g. 0.3 - 30%")
-    parser.add_argument("--thin", "--thinfrac",
-                        dest="thinfrac",
+                        help="Burn-in length or fraction. burnlen<1 is interpreted as fraction e.g. 0.3 - 30%")
+    parser.add_argument("--thin", "--thinlen",
+                        dest="thinlen",
                         default=0,
                         type=float,
                         help='''Thinning fraction. 
-                             If 0<thinfrac<1, MCMC weights are adjusted based on Poisson sampling
-                             If thinfrac>1, weighted thinning based on getdist algorithm 
-                             If thinfrac<0, thinning length will be the autocorrelation length of the chain
+                             If 0<thinlen<1, MCMC weights are adjusted based on Poisson sampling
+                             If thinlen>1, weighted thinning based on getdist algorithm 
+                             If thinlen<0, thinning length will be the autocorrelation length of the chain
                              ''')
     parser.add_argument("-v", "--verbose",
                         dest="verbose",
@@ -1006,8 +1006,8 @@ if __name__ == '__main__':
     kmax=args.kmax
     idchain=args.idchain 
     ndim=args.ndim
-    burnfrac=args.burnfrac
-    thinfrac=args.thinfrac
+    burnlen=args.burnlen
+    thinlen=args.thinlen
     verbose=args.verbose
     
     if verbose>1: logging.basicConfig(level=logging.DEBUG)
@@ -1024,8 +1024,8 @@ if __name__ == '__main__':
     print()
     print('Using file: ',method)    
     mce=MCEvidence(method,ndim=ndim,priorvolume=prior_volume,idchain=idchain,
-                                    kmax=kmax,verbose=verbose,burnlen=burnfrac,
-                                    thinlen=thinfrac)
+                                    kmax=kmax,verbose=verbose,burnlen=burnlen,
+                                    thinlen=thinlen)
     mce.evidence()
 
     print('* ln(B)[k] is the natural logarithm of the Baysian evidence estimated using the kth Nearest Neighbour.')
