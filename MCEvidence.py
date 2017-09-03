@@ -963,7 +963,7 @@ if __name__ == '__main__':
     #---------------------------------------
     #---- Extract command line arguments ---
     #---------------------------------------
-    parser = ArgumentParser(prog=sys.argv[0],
+    parser = ArgumentParser(prog=sys.argv[0],add_help=True,
                                 description=desc,
                                 epilog=cite)
 
@@ -990,7 +990,7 @@ if __name__ == '__main__':
                         dest="burnlen",
                         default=0,
                         type=float,                    
-                        help="Burn-in length or fraction. burnlen<1 is interpreted as fraction e.g. 0.3 - 30%")
+                        help="Burn-in length or fraction. burnlen<1 is interpreted as fraction e.g. 0.3 - 30%%")
     parser.add_argument("--thin", "--thinlen",
                         dest="thinlen",
                         default=0,
