@@ -68,12 +68,18 @@ def poisson_thin(weights,thin_retain_frac):
     The algorithm works by randomly sampling from a Poisson distribution 
     with mean equal to the weight.
     '''    
-    w=weights*thin_retain_frac
-    new_w=np.array([float(np.random.poisson(x)) for x in w])
-    thin_ix=np.where(new_w>0)[0]
+    w       = weights*thin_retain_frac
+    new_w   = np.array([float(np.random.poisson(x)) for x in w])
+    thin_ix = np.where(new_w>0)[0]
     logger.info('Thinning with Poisson Sampling: thinfrac={}. new_nsamples={},old_nsamples={}'.format(thin_retain_frac,len(thin_ix),len(w)))
 
-    return {'ix':thin_ix, 'w':weights[thin_ix]}
+    print('Poisson thinned chain:', len(thin_ix), '<w>', '{:5.2f}'.format(np.mean(weights)), '{:5.2f}'.format(np.mean(new_w[thin_ix])))
+    print('Sum of old weights:',np.sum(weights))
+    print('Sum of new weights:',np.sum(new_w))
+    print('Thinned:','{:5.3f}'.format(np.sum(new_w)/np.sum(weights)))
+    
+#    return {'ix':thin_ix, 'w':weights[thin_ix]}
+    return {'ix':thin_ix, 'w':new_w[thin_ix]}
 
 def weighted_thin(weights,thin_unit):
     '''
@@ -322,11 +328,17 @@ try:
                 new_w=ixw_dict['w']
                 thin_ix=ixw_dict['ix']
                 
+                #copy the new weight
+                self.samples.weights=ixw_dict['w']
+                
                 #apply thinning
                 #print('thin_ix',type(thin_ix),type(thin_ix[0]),len(thin_ix),thin_ix[0:10])
                 self.samples.setSamples(self.samples.samples[thin_ix, :],
-                                            self.samples.weights[thin_ix],
+                                            self.samples.weights,
                                             self.samples.loglikes[thin_ix])
+                                            
+                print('Average thinned weight:',np.mean(self.samples.weights))
+                
                 #copy the new weight
                 self.adjusted_weights=np.copy(self.samples.weights)
             
