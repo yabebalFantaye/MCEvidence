@@ -44,6 +44,7 @@ from argparse import ArgumentParser
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 __author__ = "Yabebal Fantaye"
 __email__ = "yabi@aims.ac.za"
