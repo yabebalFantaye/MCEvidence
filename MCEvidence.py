@@ -438,7 +438,7 @@ except:
                     self.logger.info(' loaded file: '+f)                    
                 else:
                     self.logger.info(' loaded files: '+fname+'*')                    
-                    for f in glob.glob(fname+'*'):
+                    for f in glob.glob(fname+'*.txt'):
                         d.append(np.loadtxt(f))
                         
                     DataTable=np.concatenate(d)
@@ -916,6 +916,28 @@ class MCEvidence(object):
 #===============================================
 #===============================================
 
+# The next two functions are directly taken from montepythons analyze.py
+def extract_array(line):
+    rhs = line.split('=')[-1].strip()
+    rhs = rhs.strip(']').lstrip('[')
+    sequence = [e.strip().strip('"').strip("'") for e in rhs.split(',')]
+    for index, elem in enumerate(sequence):
+        try:
+            sequence[index] = int(elem)
+        except ValueError:
+            try:
+                sequence[index] = float(elem)
+            except ValueError:
+                pass
+    return sequence
+
+
+def extract_dict(line):
+    sequence = extract_array(line)
+    lhs = line.split('=')[0].strip()
+    name = lhs.split('[')[-1].strip(']')
+    name = name.strip('"').strip("'")
+    return name, sequence
 
 def iscosmo_param(p,cosmo_params=None):
     '''
@@ -931,25 +953,43 @@ def iscosmo_param(p,cosmo_params=None):
 def params_info(fname,cosmo=False):
     '''
     Extract parameter names, ranges, and prior space volume
-    from CosmoMC *.ranges file
+    from CosmoMC *.ranges or montepython log.param file
     '''
-    logger.info('getting params info from %s.ranges'%fname)
-    par=np.genfromtxt(fname+'.ranges',dtype=None,names=('name','min','max'))#,unpack=True)
-    parName=par['name']
-    parMin=par['min']
-    parMax=par['max']
-    
-    parMC={'name':[],'min':[],'max':[],'range':[]}
-    for p,pmin,pmax in zip(parName, parMin,parMax):
-        #if parameter info is to be computed only for cosmological parameters
-        pcond=iscosmo_param(p) if cosmo else True 
-        #now get info
-        if not np.isclose(pmax,pmin) and pcond:
-            parMC['name'].append(p)
-            parMC['min'].append(pmin)
-            parMC['max'].append(pmax)
-            parMC['range'].append(np.abs(pmax-pmin))
-    #
+    if glob.glob('{}*.ranges'.format(fname)):
+      logger.info('getting params info from COSMOMC file %s.ranges'%fname)
+      par=np.genfromtxt(fname+'.ranges',dtype=None,names=('name','min','max'))#,unpack=True)
+      parName=par['name']
+      parMin=par['min']
+      parMax=par['max']
+
+      parMC={'name':[],'min':[],'max':[],'range':[]}
+      for p,pmin,pmax in zip(parName, parMin,parMax):
+         #if parameter info is to be computed only for cosmological parameters
+         pcond=iscosmo_param(p) if cosmo else True
+         #now get info
+         if not np.isclose(pmax,pmin) and pcond:
+             parMC['name'].append(p)
+             parMC['min'].append(pmin)
+             parMC['max'].append(pmax)
+             parMC['range'].append(np.abs(pmax-pmin))
+    elif glob.glob('{}/log.param'.format(fname)):
+      logger.info('getting params info from montepython log.params file')
+      with open('{}/log.param'.format(fname), 'r') as param:
+         parMC={'name':[],'min':[],'max':[],'range':[]}
+         for line in param:
+             if line.find('#') == -1:
+                 if line.find('data.parameters') != -1:
+                     name, array = extract_dict(line)
+                     pcond = array[5] == 'cosmo' if cosmo else True
+                     if pcond and not array[5] == 'derived':
+                         if array[1] == 'None' or array[2] == 'None':
+                           raise Exception('Unbounded priors are not supported - please specify priors')
+                         parMC['name'].append(name)
+                         parMC['min'].append(array[1])
+                         parMC['max'].append(array[2])
+                         parMC['range'].append(array[2] - array[1])
+    else:
+      raise Exception('Could not read parameter volume from COSMOMC .ranges file or montepython log.param file')
     parMC['str']=','.join(parMC['name'])
     parMC['ndim']=len(parMC['name'])
     parMC['volume']=np.array(parMC['range']).prod()
