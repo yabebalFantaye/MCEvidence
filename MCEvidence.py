@@ -203,11 +203,16 @@ class SamplesMIXIN(object):
             nstart=int(len(self.data[name].loglikes)*remove)
         else:
             pass
-        self.logger.info('Removing %s lines as burn in' % remove)        
+        self.logger.info('Removing %s lines as burn in' % remove)
 
-        self.data[name].samples=self.data[name].samples[nstart:, :]
-        self.data[name].loglikes=self.data[name].loglikes[nstart:]
-        self.data[name].weights=self.data[name].weights[nstart:]                
+        nsamples=self.data[name].samples.shape[0]
+        try:
+            self.data[name].samples=self.data[name].samples[nstart:, :]
+            self.data[name].loglikes=self.data[name].loglikes[nstart:]
+            self.data[name].weights=self.data[name].weights[nstart:]
+        except:
+            self.logger.info('burn-in failed: burn length %s > sample length %s' % (nstart,nsamples))
+            raise
 
     def arrays(self,name='s1'):
         self.logger.debug('extracting arrays for sample partition: '.format(name))
@@ -473,6 +478,7 @@ class MCEvidence(object):
         #self.logger.addHandler(handler)
         
         self.verbose=verbose
+        self.debug=False
         if debug or verbose>1:
             self.debug=True
             self.logger.setLevel(logging.DEBUG)    
@@ -860,7 +866,7 @@ class MCEvidence(object):
 
         if verbose>0:
             for k in range(1,self.kmax):
-                self.logger.info('   ln(B)[k={}] = {}'.format(k,math.exp(MLE[k-1])))
+                self.logger.info('   ln(B)[k={}] = {}'.format(k,MLE[k-1]))
             #print('')
         if info:
             return MLE, self.info
