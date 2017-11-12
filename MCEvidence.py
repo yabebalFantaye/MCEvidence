@@ -60,8 +60,11 @@ except:
     use_getdist=False    
 #====================================
 
-logging.basicConfig(level=logging.DEBUG)
+FORMAT = "%(levelname)s:%(filename)s.%(funcName)s():%(lineno)-8s %(message)s"
+logging.basicConfig(level=logging.DEBUG,format=FORMAT)
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+#handler = logging.StreamHandler()
 
 __author__ = "Yabebal Fantaye"
 __email__ = "yabi@aims.ac.za"
@@ -78,7 +81,16 @@ Marginal Likelihoods from Monte Carlo Markov Chains
 https://arxiv.org/abs/1704.03472
 ''' 
 
-np.random.seed(1)
+#np.random.seed(1)
+
+# Create a base class
+class LoggingHandler(object):
+    def set_logger(self):
+        self.logger = logging.getLogger(self.log_message()) #self.__class__.__name__
+    def log_message(self):
+        import inspect
+        stack = inspect.stack()
+        return str(stack[2][4])
 
 class data_set(object):
     def __init__(self,d):
@@ -88,7 +100,7 @@ class data_set(object):
         self.adjusted_weights=d['aweights']
 
         
-class SamplesMIXIN():
+class SamplesMIXIN(object):
     '''The following routines must be defined to use this class:
        __init__:  where certain variables are defined
        load_from_file: where data is read from file and 
@@ -98,7 +110,14 @@ class SamplesMIXIN():
     def setup(self,str_or_dict,**kwargs):
         #Get the getdist MCSamples objects for the samples, specifying same parameter
         #names and labels; if not specified weights are assumed to all be unity
+
+        logging.basicConfig(level=logging.INFO,format=FORMAT)        
+        self.logger = logging.getLogger(__name__) #+self.__class__.__name__)
+        #self.logger.addHandler(handler)
         
+        if self.debug:        
+            self.logger.setLevel(logging.DEBUG)
+            
         #read MCMC samples from file or dict
         if isinstance(str_or_dict,str):                
             fileroot=str_or_dict
@@ -141,15 +160,13 @@ class SamplesMIXIN():
         return self.data[name].samples.shape
 
     def importance_sample(self,isfunc,name='s1'):        
-        #importance sample with external function
-        print('mcsample IS debug',self.debug)        
+        #importance sample with external function       
         self.logger.info('Importance sampling partition: '.format(name))
         negLogLikes=isfunc(self.data[name].samples)
         scale=0 #negLogLikes.min()
         self.data[name].adjusted_weights *= np.exp(-(negLogLikes-scale))                     
 
     def thin(self,nthin=1,name='s1'):
-        print('mcsample thin debug',self.debug)        
         self.logger.info('Thinning sample partition: '.format(name))         
         if nthin==1:
             return
@@ -161,10 +178,10 @@ class SamplesMIXIN():
                 #call weighted thinning                    
                 try:
                     #if weights are integers, use getdist algorithm
-                    thin_ix,new_weights = self.thin_indices(ncorr,name=name)
+                    thin_ix,new_weights = self.thin_indices(nthin,name=name)
                 except:
                     #if weights are not integers, use internal algorithm
-                    thin_ix,new_weights = self.weighted_thin(ncorr,name=name)
+                    thin_ix,new_weights = self.weighted_thin(nthin,name=name)
 
             #now thin samples and related quantities
             self.data[name].weights = new_weights            
@@ -214,15 +231,16 @@ class SamplesMIXIN():
         
         text='''Thinning with Poisson Sampling: thinfrac={}. 
                     new_nsamples={},old_nsamples={}'''
-        logger.info(text.format(thin_retain_frac,len(thin_ix),len(w)))
+        self.logger.debug(text.format(thin_retain_frac,len(thin_ix),len(w)))
 
-        print('Poisson thinned chain:', len(thin_ix),
-                  '<w>', '{:5.2f}'.format(np.mean(weights)),
-                  '{:5.2f}'.format(np.mean(new_w)))
+        if self.debug:
+            print('Poisson thinned chain:', len(thin_ix),
+                      '<w>', '{:5.2f}'.format(np.mean(weights)),
+                      '{:5.2f}'.format(np.mean(new_w)))
 
-        print('Sum of old weights:',np.sum(weights))
-        print('Sum of new weights:',np.sum(new_w))
-        print('Thinned:','{:5.3f}'.format(np.sum(new_w)/np.sum(weights)))
+            print('Sum of old weights:',np.sum(weights))
+            print('Sum of new weights:',np.sum(new_w))
+            print('Thinned:','{:5.3f}'.format(np.sum(new_w)/np.sum(weights)))
 
     #    return {'ix':thin_ix, 'w':weights[thin_ix]}
         return thin_ix, new_w
@@ -256,7 +274,7 @@ class SamplesMIXIN():
         
         text='''Thinning with weighted binning: thinfrac={}. 
                 new_nsamples={},old_nsamples={}'''
-        logger.info(text.format(thin_unit,len(thin_ix),len(new_w)))
+        self.logger.info(text.format(thin_unit,len(thin_ix),len(new_w)))
 
         return thin_ix, new_w
 
@@ -327,11 +345,7 @@ class MCSamples(SamplesMIXIN):
         self.labels=None
         self.trueval=trueval       
         self.px=px
-
-        if self.debug:
-            logging.basicConfig(level=logging.DEBUG)
-        self.logger = logging.getLogger(__name__)
-        
+            
         self.setup(str_or_dict,**kwargs)
 
     def chains2samples(self):
@@ -341,8 +355,6 @@ class MCSamples(SamplesMIXIN):
 
         :return: self
         """
-        print('mcsample chains2samples debug',self.debug)
-        
         if self.chains is None:
             self.logger.error('The chains array is empty!')
             raise
@@ -351,8 +363,10 @@ class MCSamples(SamplesMIXIN):
         #
         self.chain_offsets = np.cumsum(np.array([0] + [chain.shape[0] for chain in self.chains]))
         if self.split:
-            self.logger.info('spliting chains: nchain={}'.format(nchains))            
             if nchains>1:
+                text='''partition {} chains in two sets  
+                        chains 1:{} in one,  the {}th chain in the other'''
+                self.logger.info(text.format(nchains,nchains-1,nchains)) 
                 s1=np.concatenate(self.chains[0:-1])
                 s2=self.chains[-1]
             else:
@@ -362,7 +376,8 @@ class MCSamples(SamplesMIXIN):
                 ix=np.random.choice(rowid,size=nrow/2,replace=False)
                 not_ix = np.setxor1d(rowid, ix) 
                 #now split
-                self.logger.info('splitting chain with nrow={} to ns1={}, ns2={}'.format(nrow, len(ix),len(not_ix)))
+                text='single chain with nrow={} split to ns1={}, ns2={}'
+                self.logger.info(text.format(nrow, len(ix),len(not_ix)))
                 s1=s[ix,:]
                 s2=s[not_ix,:]
             #change to dict
@@ -385,7 +400,7 @@ class MCSamples(SamplesMIXIN):
         return s1_dict,s2_dict
     
     def load_from_file(self,fname,**kwargs):
-        self.logger.info('''Loading file assuming CosmoMC columns order: 
+        self.logger.debug('''Loading file assuming CosmoMC columns order: 
                            weight loglike param1 param2 ...''')
         self.chains=[]
         
@@ -453,17 +468,17 @@ class MCEvidence(object):
         :param verbose: chattiness of the run
         
         """
-        #
-        #logging.basicConfig(level=logging.INFO)        
+        logging.basicConfig(level=logging.DEBUG,format=FORMAT)
+        self.logger = logging.getLogger(__name__) # +self.__class__.__name__)
+        #self.logger.addHandler(handler)
+        
         self.verbose=verbose
         if debug or verbose>1:
             self.debug=True
-            logging.basicConfig(level=logging.DEBUG)
+            self.logger.setLevel(logging.DEBUG)    
         if verbose==0:
-            #logger.setLevel(logging.WARNING)
-            logging.basicConfig(level=logging.WARNING)            
+            self.logger.setLevel(logging.WARNING)            
 
-        self.logger = logging.getLogger(__name__)
         #print('log level: ',logging.getLogger().getEffectiveLevel())
         
         self.info={}
@@ -492,7 +507,7 @@ class MCEvidence(object):
             
             if isinstance(method,str):
                 self.fname=method      
-                self.logger.debug('Using chains: ',method)
+                self.logger.debug('Using chains: %s'%method)
             else:
                 self.logger.debug('dictionary of samples and loglike array passed')
                 
@@ -510,10 +525,10 @@ class MCEvidence(object):
                 XClass=method
             
             if hasattr(XClass, '__class__'):
-                self.logger.debug(__name__+': method is an instance of a class')
+                self.logger.debug('method is an instance of a class')
                 self.method=XClass
             else:
-                self.logger.debug(__name__+': method is class variable .. instantiating class')
+                self.logger.debug('method is class variable .. instantiating class')
                 self.method=XClass(*args)                
                 #if passed class has some info, display it
                 try:
@@ -533,7 +548,7 @@ class MCEvidence(object):
             _=self.gd.removeBurn(remove=burnlen,name='s1')
             if self.split: _=self.gd.removeBurn(remove=burnlen,name='s2')            
         if np.abs(thinlen)>0:
-            self.logger.info('applying weighted thinning with thin length=%s'%thinlen)
+            self.logger.debug('applying weighted thinning with thin length=%s'%thinlen)
             _=self.gd.thin(nthin=thinlen,name='s1')
             if self.split: _=self.gd.thin(nthin=thinlen,name='s2')               
 
@@ -557,7 +572,7 @@ class MCEvidence(object):
         self.info['NparamsCosmo']=self.ndim
         self.info['Nsamples']=self.nsample
         
-        if debug:
+        if self.debug:
             print('partition s1.shape',self.gd.get_shape(name='s1'))
             if split:
                 print('partition s2.shape',self.gd.get_shape(name='s2'))            
@@ -636,7 +651,7 @@ class MCEvidence(object):
         else:
             idx=np.arange(istart,nsamples+istart)
 
-        self.logger.info('partition %s requested nsamples=%s, ntotal_chian=%s'%(name,nsamples,ntot))
+        self.logger.debug('partition %s requested nsamples=%s, ntotal_chian=%s'%(name,nsamples,ntot))
         s,lnp,w=self.gd.arrays(name)
 
         #trim 
@@ -732,7 +747,7 @@ class MCEvidence(object):
         else:
             logPriorVolume=math.log(pvolume)            
 
-        self.logger.debug('log prior volume: ',logPriorVolume)
+        self.logger.debug('log prior volume: %s'%logPriorVolume)
             
         kmax=self.kmax
         ndim=self.ndim
@@ -960,8 +975,12 @@ if __name__ == '__main__':
     burnlen=args.burnlen
     thinlen=args.thinlen
     verbose=args.verbose
+
+    logger = logging.getLogger(__name__)
     
-    if verbose>1: logging.basicConfig(level=logging.DEBUG)
+    if verbose>1:
+        logger.setLevel(logging.DEBUG)
+        
     try:
         parMC=params_info(method,cosmo=args.verbose)
         if verbose>1: print(parMC)
