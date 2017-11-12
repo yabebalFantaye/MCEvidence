@@ -64,7 +64,7 @@ FORMAT = "%(levelname)s:%(filename)s.%(funcName)s():%(lineno)-8s %(message)s"
 logging.basicConfig(level=logging.DEBUG,format=FORMAT)
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
-#handler = logging.StreamHandler()
+
 
 __author__ = "Yabebal Fantaye"
 __email__ = "yabi@aims.ac.za"
