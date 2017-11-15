@@ -905,7 +905,7 @@ class MCEvidence(object):
 
         if verbose>0:
             for k in range(1,self.kmax):
-                self.logger.info('   ln(B)[k={}] = {}'.format(k,math.exp(MLE[k-1])))
+                self.logger.info('   ln(B)[k={}] = {}'.format(k,MLE[k-1]))
             #print('')
         if info:
             return MLE, self.info
