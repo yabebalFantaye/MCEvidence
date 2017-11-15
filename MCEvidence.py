@@ -437,8 +437,8 @@ except:
                     DataTable=np.loadtxt(f)
                     self.logger.info(' loaded file: '+f)                    
                 else:
-                    self.logger.info(' loaded files: '+fname+'*')                    
-                    for f in glob.glob(fname+'*.txt'):
+                    self.logger.info(' loaded files: '+os.path.join(fname, '*.txt'))
+                    for f in glob.glob(os.path.join(fname, '*.txt')):
                         d.append(np.loadtxt(f))
                         
                     DataTable=np.concatenate(d)
@@ -950,7 +950,7 @@ def iscosmo_param(p,cosmo_params=None):
                       'nrunrun','r','nt','ntrun','Aphiphi']        
     return p in cosmo_params
 
-def params_info(fname,cosmo=False):
+def params_info(fname,cosmo=False, volumes={}):
     '''
     Extract parameter names, ranges, and prior space volume
     from CosmoMC *.ranges or montepython log.param file
@@ -974,6 +974,7 @@ def params_info(fname,cosmo=False):
              parMC['range'].append(np.abs(pmax-pmin))
     elif glob.glob('{}/log.param'.format(fname)):
       logger.info('getting params info from montepython log.params file')
+      nr_of_cosmo_params = 0
       with open('{}/log.param'.format(fname), 'r') as param:
          parMC={'name':[],'min':[],'max':[],'range':[]}
          for line in param:
@@ -982,16 +983,23 @@ def params_info(fname,cosmo=False):
                      name, array = extract_dict(line)
                      pcond = array[5] == 'cosmo' if cosmo else True
                      if pcond and not array[5] == 'derived':
+			 nr_of_cosmo_params += 1
                          if array[1] == 'None' or array[2] == 'None':
-                           raise Exception('Unbounded priors are not supported - please specify priors')
-                         parMC['name'].append(name)
-                         parMC['min'].append(array[1])
-                         parMC['max'].append(array[2])
-                         parMC['range'].append(array[2] - array[1])
+			   if name in volumes:
+			     parMC['name'].append(name)
+			     parMC['range'].append(volumes[name])
+			   else:
+			     raise Exception('Unbounded priors are not supported but prior for {} is not bound - please specify priors'.format(name))
+                         else:
+			  parMC['name'].append(name)
+			  parMC['min'].append(array[1])
+			  parMC['max'].append(array[2])
+			  parMC['range'].append(array[2] - array[1])
     else:
       raise Exception('Could not read parameter volume from COSMOMC .ranges file or montepython log.param file')
     parMC['str']=','.join(parMC['name'])
     parMC['ndim']=len(parMC['name'])
+    parMC['nr_of_params'] = nr_of_cosmo_params
     parMC['volume']=np.array(parMC['range']).prod()
     
     return parMC
