@@ -666,19 +666,35 @@ class MCEvidence(object):
         
         if prewhiten:
             self.logger.debug('Prewhitenning chain partition: %s '%name)
-            # Covariance matrix of the samples, and eigenvalues (in w) and eigenvectors (in v):
-            ChainCov = np.cov(s.T)
-            eigenVal,eigenVec = np.linalg.eig(ChainCov)                
-            Jacobian = math.sqrt(np.linalg.det(ChainCov))
-
-            # Prewhiten:  First diagonalise:
-            s = np.dot(s,eigenVec);
-
-            #print('EigenValues.shape,ndim',eigenVal.shape,ndim)
-            #print('EigenValues=',eigenVal)
-            # And renormalise new parameters to have unit covariance matrix:
-            for i in range(self.ndim):
-                s[:,i]= s[:,i]/math.sqrt(eigenVal[i])
+            try:
+                # Covariance matrix of the samples, and eigenvalues (in w) and eigenvectors (in v):
+                ChainCov = np.cov(s.T)
+                
+                eigenVal,eigenVec = np.linalg.eig(ChainCov)
+                #check for negative eigenvalues
+                if (eigenVal>0).any():
+                    self.logger.warn("Some of the eigenvalues of the covariance matrix are negative and/or complex:")
+                    for i,e in enumerate(eigenVal):
+                        print("Eigenvalue Param_{} = {}".format(i,e))
+                    print("")
+                    print("=================================================================================")
+                    print("        Chain is not diagonalized! Estimated Evidence may not be accurate!       ")
+                    print("              Consider using smaller set of parameters using --ndim              ")
+                    print("=================================================================================")
+                    print("")                    
+                    #no diagonalisation
+                    Jacobian=1                           
+                else:
+                    #all eigenvalues are positive
+                    Jacobian = math.sqrt(np.linalg.det(ChainCov))
+                    # Prewhiten:  First diagonalise:
+                    s = np.dot(s,eigenVec);
+                    # And renormalise new parameters to have unit covariance matrix:
+                    for i in range(self.ndim):
+                        s[:,i]= s[:,i]/math.sqrt(eigenVal[i])
+                
+            except:
+                    self.logger.error("Unknown error during diagonalizing the chain with its covariance matrix.")
         else:
             #no diagonalisation
             Jacobian=1
