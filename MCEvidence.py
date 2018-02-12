@@ -13,9 +13,11 @@ License : MIT
 Status : Under Development
 
 Description :
-Python2.7 implementation of the evidence estimation from MCMC chains 
+Python implementation of the evidence estimation from MCMC chains 
 as preesented in A. Heavens et. al. 2017
 (paper can be found here : https://arxiv.org/abs/ ).
+
+This code is tested in Python 2 version 2.7.12 and Python 3 version 3.5.2  
 """
 
 from __future__ import absolute_import
