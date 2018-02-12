@@ -421,8 +421,9 @@ class MCSamples(SamplesMIXIN):
                 self.chains.append(d)                
                 self.logger.info(' loaded file: '+f)                    
             else:
-                self.logger.info(' loaded files: '+fname+'*')                    
-                for f in glob.glob(fname+'*'):
+                self.logger.info(' loading files: '+fname+'*.txt')                    
+                for f in glob.glob(fname+'*.txt'):
+                    self.logger.debug('loading: '+f)
                     self.chains.append(np.loadtxt(f))
 
         return self.chains2samples()
@@ -960,11 +961,11 @@ if __name__ == '__main__':
                              If thinlen>1, weighted thinning based on getdist algorithm 
                              If thinlen<0, thinning length will be the autocorrelation length of the chain
                              ''')
-    parser.add_argument("-v", "--verbose",
+    parser.add_argument("-vb", "--verbose",
                         dest="verbose",
                         default=1,
                         type=int,
-                        help="increase output verbosity")
+                        help="Increase output verbosity: 0: WARNNINGS, 1: INFO, 2: DEBUG, >2: EVERYTHING")
 
     parser.add_argument('--cosmo', help='flag to compute prior_volume using cosmological parameters only',
                         action='store_true')
