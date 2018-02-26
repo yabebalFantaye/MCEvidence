@@ -1,6 +1,8 @@
 # MCEvidence
 A python package implementing the MARGINAL LIKELIHOODS FROM MONTE CARLO MARKOV CHAINS algorithm described in Heavens et. al. (2017)
 
+This code is tested in Python 2 version 2.7.12 and Python 3 version 3.5.2.
+
 # Notes
 
 The MCEvidence algorithm is implemented using scikit nearest neighbour code.
@@ -47,8 +49,10 @@ The output is:
                         Burn-in fraction
        -t THINFRAC, --thin THINFRAC, --thinfrac THINFRAC
                         Thinning fraction
-       -v VERBOSE, --verbose VERBOSE
-                        increase output verbosity
+       -vb VERBOSE, --verbose VERBOSE
+                        Verbosity of the code while running: The mapping between verbose number
+                        and the logging module levels are: 0: WARNNING, 1: INFO, 2: DEBUG
+                        setting verbose>2 outputs EVERYTHING
        --cosmo              
               	        Flag to compute prior_volume using cosmological
                         parameters only 

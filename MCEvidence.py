@@ -13,9 +13,11 @@ License : MIT
 Status : Under Development
 
 Description :
-Python2.7 implementation of the evidence estimation from MCMC chains 
+Python implementation of the evidence estimation from MCMC chains 
 as preesented in A. Heavens et. al. 2017
 (paper can be found here : https://arxiv.org/abs/ ).
+
+This code is tested in Python 2 version 2.7.12 and Python 3 version 3.5.2  
 """
 
 from __future__ import absolute_import
@@ -42,9 +44,29 @@ from numpy.linalg import det
 import logging
 from argparse import ArgumentParser
 
-logging.basicConfig(level=logging.INFO)
+#====================================
+try:
+    '''
+    If getdist is installed, use that to reach chains.
+    Otherwise, use the minimal chain reader class implemented below.
+    '''    
+    from getdist import MCSamples, chains
+    from getdist import plots, IniFile
+    import getdist as gd
+    use_getdist=True
+except:    
+    '''
+    getdist is not installed
+    use a simple chain reader
+    '''
+    use_getdist=False    
+#====================================
+
+FORMAT = "%(levelname)s:%(filename)s.%(funcName)s():%(lineno)-8s %(message)s"
+logging.basicConfig(level=logging.DEBUG,format=FORMAT)
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
 
 __author__ = "Yabebal Fantaye"
 __email__ = "yabi@aims.ac.za"
@@ -61,446 +83,353 @@ Marginal Likelihoods from Monte Carlo Markov Chains
 https://arxiv.org/abs/1704.03472
 ''' 
 
-np.random.seed(1)
+#np.random.seed(1)
 
-def poisson_thin(weights,thin_retain_frac):
-    '''
-    Given a weight array and thinning retain fraction, perform thinning.
-    The algorithm works by randomly sampling from a Poisson distribution 
-    with mean equal to the weight.
-    '''    
-    w       = weights*thin_retain_frac
-    new_w   = np.array([float(np.random.poisson(x)) for x in w])
-    thin_ix = np.where(new_w>0)[0]
-    logger.info('Thinning with Poisson Sampling: thinfrac={}. new_nsamples={},old_nsamples={}'.format(thin_retain_frac,len(thin_ix),len(w)))
+# Create a base class
+class LoggingHandler(object):
+    def set_logger(self):
+        self.logger = logging.getLogger(self.log_message()) #self.__class__.__name__
+    def log_message(self):
+        import inspect
+        stack = inspect.stack()
+        return str(stack[2][4])
 
-    print('Poisson thinned chain:', len(thin_ix), '<w>', '{:5.2f}'.format(np.mean(weights)), '{:5.2f}'.format(np.mean(new_w[thin_ix])))
-    print('Sum of old weights:',np.sum(weights))
-    print('Sum of new weights:',np.sum(new_w))
-    print('Thinned:','{:5.3f}'.format(np.sum(new_w)/np.sum(weights)))
-    
-#    return {'ix':thin_ix, 'w':weights[thin_ix]}
-    return {'ix':thin_ix, 'w':new_w[thin_ix]}
+class data_set(object):
+    def __init__(self,d):
+        self.samples=d['samples']
+        self.weights=d['weights']
+        self.loglikes=d['loglikes']
+        self.adjusted_weights=d['aweights']
 
-def weighted_thin(weights,thin_unit):
-    '''
-    Given a weight array, perform thinning.
-    If the all weights are equal, this should 
-    be equivalent to selecting every N/((thinfrac*N)
-    where N=len(weights).
-    '''
-    
-    N=len(weights)
-    if thin_unit==0: return range(N),weights
         
-    if thin_unit<1:
-        N2=np.int(N*thin_unit)
-    else:
-        N2=N//thin_unit
+class SamplesMIXIN(object):
+    '''The following routines must be defined to use this class:
+       __init__:  where certain variables are defined
+       load_from_file: where data is read from file and 
+                       returned as python dict
+    '''
     
-    #bin the weight index to have the desired length
-    #this defines the bin edges
-    bins = np.linspace(-1, N, N2+1) 
-    #this collects the indices of the weight array in each bin
-    ind = np.digitize(np.arange(N), bins)  
-    #this gets the maximum weight in each bin
-    thin_ix=pd.Series(weights).groupby(ind).idxmax().tolist()
-    thin_ix=np.array(thin_ix,dtype=np.intp)
-    logger.info('Thinning with weighted binning: thinfrac={}. new_nsamples={},old_nsamples={}'.format(thin_unit,len(thin_ix),len(w)))
+    def setup(self,str_or_dict,**kwargs):
+        #Get the getdist MCSamples objects for the samples, specifying same parameter
+        #names and labels; if not specified weights are assumed to all be unity
 
-    return {'ix':thin_ix, 'w':weights[thin_ix]}
+        logging.basicConfig(level=logging.INFO,format=FORMAT)        
+        self.logger = logging.getLogger(__name__) #+self.__class__.__name__)
+        #self.logger.addHandler(handler)
+        
+        if self.debug:        
+            self.logger.setLevel(logging.DEBUG)
+            
+        #read MCMC samples from file or dict
+        if isinstance(str_or_dict,str):                
+            fileroot=str_or_dict
+            self.logger.info('Loading chain from '+fileroot)                
+            s1,s2 = self.load_from_file(fileroot,**kwargs)
+            self.data={'s1':data_set(s1),'s2':data_set(s2)}
+            
+        # TODO: implement s1_s2 when dict is passed
+        #elif isinstance(str_or_dict,dict):                
+        #    d=str_or_dict
+        
+        else:
+           self.logger.info('Passed first argument type is: %s'%type(str_or_dict))                
+           self.logger.error('first argument to samples2getdist should be a string or dict.')
+           raise
 
-def thin_indices(weights, factor):
-    """
-    Ref: 
-    http://getdist.readthedocs.io/en/latest/_modules/getdist/chains.html#WeightedSamples.thin
+        #self.samples=s1_s2['s1']['samples']
+        #self.loglikes=s1_s2['s1']['loglikes']
+        #self.weights=s1_s2['s1']['weights']
+        
+        #if 'weights' in d.keys() else np.ones(len(self.loglikes))
+
+
+        ndim=self.get_shape()[1]
+
+        if hasattr(self, 'names'):
+            if self.names is None:
+                self.names = ["%s%s"%('p',i) for i in range(ndim)]
+        if hasattr(self, 'labels'):                
+            if self.labels is None:
+                self.labels =  ["%s_%s"%(self.px,i) for i in range(ndim)]
+                
+        if not hasattr(self, 'trueval'):     
+            self.trueval=None
+            
+        self.nparamMC=self.get_shape()[1]
+
     
-    Indices to make single weight 1 samples. Assumes integer weights.
+    def get_shape(self,name='s1'):
+        return self.data[name].samples.shape
 
-    :param factor: The factor to thin by, should be int.
-    :param weights: The weights to thin, 
-    :return: array of indices of samples to keep
-    """
-    numrows = len(weights)
-    norm1 = np.sum(weights)
-    weights = weights.astype(np.int)
-    norm = np.sum(weights)
+    def importance_sample(self,isfunc,name='s1'):        
+        #importance sample with external function       
+        self.logger.info('Importance sampling partition: '.format(name))
+        negLogLikes=isfunc(self.data[name].samples)
+        scale=0 #negLogLikes.min()
+        self.data[name].adjusted_weights *= np.exp(-(negLogLikes-scale))                     
 
-    if abs(norm - norm1) > 1e-4:
-        print('Can only thin with integer weights')
-        raise 
-    if factor != int(factor):
-        print('Thin factor must be integer')
-        raise 
-    factor = int(factor)
-    if factor >= np.max(weights):
-        cumsum = np.cumsum(weights) // factor
-        # noinspection PyTupleAssignmentBalance
-        _, thin_ix = np.unique(cumsum, return_index=True)
-    else:
-        tot = 0
-        i = 0
-        thin_ix = np.empty(norm // factor, dtype=np.int)
-        ix = 0
-        mult = weights[i]
-        while i < numrows:
-            if mult + tot < factor:
-                tot += mult
-                i += 1
-                if i < numrows: mult = weights[i]
+    def thin(self,nthin=1,name='s1'):
+        self.logger.info('Thinning sample partition: '.format(name))         
+        if nthin==1:
+            return
+        try:
+            norig=len(self.data[name].weights)
+            if nthin<1:
+                thin_ix,new_weights = self.poisson_thin(nthin,name=name)
             else:
-                thin_ix[ix] = i
-                ix += 1
-                if mult == factor - tot:
+                #call weighted thinning                    
+                try:
+                    #if weights are integers, use getdist algorithm
+                    thin_ix,new_weights = self.thin_indices(nthin,name=name)
+                except:
+                    #if weights are not integers, use internal algorithm
+                    thin_ix,new_weights = self.weighted_thin(nthin,name=name)
+
+            #now thin samples and related quantities
+            self.data[name].weights = new_weights            
+            self.data[name].samples=self.data[name].samples[thin_ix, :]
+            self.data[name].loglikes=self.data[name].loglikes[thin_ix]
+            self.data[name].adjusted_weights=self.data[name].weights.copy()
+            
+            nnew=len(new_weights)
+            self.logger.info('''Thinning with thin length={} 
+                                #old_chain={},#new_chain={}'''.format(nthin,norig,nnew))                
+        except:
+            self.logger.info('Thinning not possible.')
+            raise
+
+    def removeBurn(self,remove=0,name='s1'):
+        self.logger.info('burning for sample partition={}'.format(name)) 
+        nstart=remove
+        if remove<1:
+            nstart=int(len(self.data[name].loglikes)*remove)
+        else:
+            pass
+        self.logger.info('Removing %s lines as burn in' % remove)
+
+        nsamples=self.data[name].samples.shape[0]
+        try:
+            self.data[name].samples=self.data[name].samples[nstart:, :]
+            self.data[name].loglikes=self.data[name].loglikes[nstart:]
+            self.data[name].weights=self.data[name].weights[nstart:]
+        except:
+            self.logger.info('burn-in failed: burn length %s > sample length %s' % (nstart,nsamples))
+            raise
+
+    def arrays(self,name='s1'):
+        self.logger.debug('extracting arrays for sample partition: '.format(name))
+        s=self.data[name].samples
+        lnp=-self.data[name].loglikes
+        w=self.data[name].weights
+        return s, lnp, w
+    
+    def poisson_thin(self,thin_retain_frac,name='s1'):
+        '''
+        Given a weight array and thinning retain fraction, perform thinning.
+        The algorithm works by randomly sampling from a Poisson distribution 
+        with mean equal to the weight.
+        '''
+        weights=self.data[name].weights.copy()
+
+        w       = weights*thin_retain_frac
+        new_w   = np.array([float(np.random.poisson(x)) for x in w])
+        thin_ix = np.where(new_w>0)[0]
+        new_w = new_w[thin_ix]
+        
+        text='''Thinning with Poisson Sampling: thinfrac={}. 
+                    new_nsamples={},old_nsamples={}'''
+        self.logger.debug(text.format(thin_retain_frac,len(thin_ix),len(w)))
+
+        if self.debug:
+            print('Poisson thinned chain:', len(thin_ix),
+                      '<w>', '{:5.2f}'.format(np.mean(weights)),
+                      '{:5.2f}'.format(np.mean(new_w)))
+
+            print('Sum of old weights:',np.sum(weights))
+            print('Sum of new weights:',np.sum(new_w))
+            print('Thinned:','{:5.3f}'.format(np.sum(new_w)/np.sum(weights)))
+
+    #    return {'ix':thin_ix, 'w':weights[thin_ix]}
+        return thin_ix, new_w
+
+    def weighted_thin(self,thin_unit,name='s1'):
+        '''
+        Given a weight array, perform thinning.
+        If the all weights are equal, this should 
+        be equivalent to selecting every N/((thinfrac*N)
+        where N=len(weights).
+        '''
+        weights=self.data[name].weights.copy()
+
+        N=len(weights)
+        if thin_unit==0: return range(N),weights
+
+        if thin_unit<1:
+            N2=np.int(N*thin_unit)
+        else:
+            N2=N//thin_unit
+
+        #bin the weight index to have the desired length
+        #this defines the bin edges
+        bins = np.linspace(-1, N, N2+1) 
+        #this collects the indices of the weight array in each bin
+        ind = np.digitize(np.arange(N), bins)  
+        #this gets the maximum weight in each bin
+        thin_ix=pd.Series(weights).groupby(ind).idxmax().tolist()
+        thin_ix=np.array(thin_ix,dtype=np.intp)
+        new_w = weights[thin_ix]
+        
+        text='''Thinning with weighted binning: thinfrac={}. 
+                new_nsamples={},old_nsamples={}'''
+        self.logger.info(text.format(thin_unit,len(thin_ix),len(new_w)))
+
+        return thin_ix, new_w
+
+    def thin_indices(self, factor,name='s1'):
+        """
+        Ref: 
+        http://getdist.readthedocs.io/en/latest/_modules/getdist/chains.html#WeightedSamples.thin
+
+        Indices to make single weight 1 samples. Assumes integer weights.
+
+        :param factor: The factor to thin by, should be int.
+        :param weights: The weights to thin, 
+        :return: array of indices of samples to keep
+        """
+        weights=self.data[name].weights.copy()
+        
+        numrows = len(weights)
+        norm1 = np.sum(weights)
+        weights = weights.astype(np.int)
+        norm = np.sum(weights)
+
+        if abs(norm - norm1) > 1e-4:
+            print('Can only thin with integer weights')
+            raise 
+        if factor != int(factor):
+            print('Thin factor must be integer')
+            raise 
+        factor = int(factor)
+        if factor >= np.max(weights):
+            cumsum = np.cumsum(weights) // factor
+            # noinspection PyTupleAssignmentBalance
+            _, thin_ix = np.unique(cumsum, return_index=True)
+        else:
+            tot = 0
+            i = 0
+            thin_ix = np.empty(norm // factor, dtype=np.int)
+            ix = 0
+            mult = weights[i]
+            while i < numrows:
+                if mult + tot < factor:
+                    tot += mult
                     i += 1
                     if i < numrows: mult = weights[i]
                 else:
-                    mult -= (factor - tot)
-                tot = 0
+                    thin_ix[ix] = i
+                    ix += 1
+                    if mult == factor - tot:
+                        i += 1
+                        if i < numrows: mult = weights[i]
+                    else:
+                        mult -= (factor - tot)
+                    tot = 0
 
-    return {'ix':thin_ix,'w':weights[thin_ix]}
+        return thin_ix,weights[thin_ix]
 
-#========== 
+#==================
 
-try:
-    '''
-    If getdist is installed, use that to reach chains.
-    Otherwise, use the minimal chain reader class implemented below.
-    '''    
-    from getdist import MCSamples, chains
-    from getdist import plots, IniFile
-    import getdist as gd
+class MCSamples(SamplesMIXIN):
 
-    #raise 
-    #====================================
-    #      Getdist wrapper
-    #====================================    
-    class MCSamples(object):
-        #Ref:
-        #http://getdist.readthedocs.io/en/latest/plot_gallery.html
+    def __init__(self,str_or_dict,trueval=None,
+                     debug=False,split=False,
+                     names=None,labels=None,px='x',
+                     **kwargs):
+        
+        self.debug=debug
+        self.split=split
+        self.names=None
+        self.labels=None
+        self.trueval=trueval       
+        self.px=px
+            
+        self.setup(str_or_dict,**kwargs)
 
-        def __init__(self,str_or_dict,trueval=None,debug=False,
-                    names=None,labels=None,px='x',**kwargs):
-            #Get the getdist MCSamples objects for the samples, specifying same parameter
-            #names and labels; if not specified weights are assumed to all be unity
+    def chains2samples(self):
+        """
+        Combines separate chains into one samples array, so self.samples has all the samples
+        and this instance can then be used as a general :class:`~.chains.WeightedSamples` instance.
 
-            if debug:
-                logging.basicConfig(level=logging.DEBUG)
-                
-            #if not debug: #logging.getLogger()==logging.WARNING:
-            gd.print_load_details=False
-            gd.chains.print_load_details=False
-                
-            self.logger = logging.getLogger(__name__)
-
-            if isinstance(str_or_dict,str):
-                
-                fileroot=str_or_dict
-                self.logger.info('string passed. Loading chain from '+fileroot)                
-                self.load_from_file(fileroot,**kwargs)
-                
-            elif isinstance(str_or_dict,dict):
-                d=str_or_dict
-                self.logger.info('Chain is passed as dict: keys='+','.join(d.keys()))
-                
-                chain=d['samples']
-                loglikes=d['loglikes']
-                weights=d['weights'] if 'weights' in d.keys() else np.ones(len(loglikes))
-                ndim=chain.shape[1]
-
-                if names is None:
-                    names = ["%s%s"%('p',i) for i in range(ndim)]
-                if labels is None:
-                    labels =  ["%s_%s"%(px,i) for i in range(ndim)]
-                    
-                self.names=names
-                self.labels=labels
-                self.trueval=trueval
-                self.samples = gd.MCSamples(samples=chain,
-                                            loglikes=loglikes,
-                                            weights=weights,
-                                            names = names,
-                                            labels = labels)
-                #Removes parameters that do not vary
-                self.samples.deleteFixedParams()
-                #Removes samples with zero weight
-                #self.samples.filter(weights>0)
-                
+        :return: self
+        """
+        if self.chains is None:
+            self.logger.error('The chains array is empty!')
+            raise
+        #
+        nchains=len(self.chains)
+        #
+        self.chain_offsets = np.cumsum(np.array([0] + [chain.shape[0] for chain in self.chains]))
+        if self.split:
+            if nchains>1:
+                text='''partition {} chains in two sets  
+                        chains 1:{} in one,  the {}th chain in the other'''
+                self.logger.info(text.format(nchains,nchains-1,nchains)) 
+                s1=np.concatenate(self.chains[0:-1])
+                s2=self.chains[-1]
             else:
-               self.logger.info('Passed first argument type is: ',type(str_or_dict))                
-               self.logger.error('first argument to samples2getdist should be a string or dict.')
-               raise
-
-            # a copy of the weights that can be altered
-            # independently to the original weights
-            self.adjusted_weights=np.copy(self.samples.weights)
-            #
-            self.nparamMC=self.samples.paramNames.numNonDerived()
-
-        def importance_sample(self,isfunc):
-            #importance sample with external function
-            negLogLikes=isfunc(self.samples.getParams())
-            scale= 0#np.min(negLogLikes)            
-            self.adjusted_weights *= np.exp(-(negLogLikes-scale))
-            #self.adjusted_weights *= negLogLikes 
-
-            #if self.samples.loglikes is not None:
-            #    self.samples.loglikes += negLogLikes
-            #self.samples.weights *= np.exp(-negLogLikes) 
-            #self.samples._weightsChanged()
-            #self.samples.reweightAddingLogLikes(negLogLikes)
-
-        def get_shape(self):
-            return self.samples.samples.shape
-
-        def triangle(self,**kwargs):
-            #Triangle plot
-            g = gd.plots.getSubplotPlotter()
-            g.triangle_plot(self.samples, filled=True,**kwargs)
-
-        def plot_1d(self,l,**kwargs):
-            #1D marginalized plot
-            g = gd.plots.getSinglePlotter(width_inch=4)        
-            g.plot_1d(self.samples, l,**kwargs)
-
-        def plot_2d(self,l,**kwargs):
-            #Customized 2D filled comparison plot
-            g = gd.plots.getSinglePlotter(width_inch=6, ratio=3 / 5.)       
-            g.plot_1d(self.samples, l,**kwargs)      
-
-        def plot_3d(self,llist):
-            #2D scatter (3D) plot
-            g = gd.plots.getSinglePlotter(width_inch=5)
-            g.plot_3d(self.samples, llist)   
-
-        def save_to_file(self,path=None,dname='chain',froot='test'):
-            #Save to file
-            if path is None:
-                path=tempfile.gettempdir()
-            tempdir = os.path.join(path,dname)
-            if not os.path.exists(tempdir): os.makedirs(tempdir)
-            rootname = os.path.join(tempdir, froot)
-            self.samples.saveAsText(rootname)     
-
-        def load_from_file(self,rootname,**kwargs):
-            #Load from file
-            #self.samples=[]
-            #for f in rootname:
-            idchain=kwargs.pop('idchain', 0)
-            self.logger.info('mcsample: rootname={}, idchain={}'.format(rootname,idchain))
-            #print(gd.print_load_details)
-            #print(gd.chains.print_load_details)            
-            self.samples=gd.loadMCSamples(rootname,**kwargs)#.makeSingle()
-            #print('**')
-            if idchain>0:
-                self.samples.samples=self.samples.getSeparateChains()[idchain-1].samples
-                self.samples.loglikes=self.samples.getSeparateChains()[idchain-1].loglikes
-                self.samples.weights=self.samples.getSeparateChains()[idchain-1].weights            
-                
-            # if rootname.split('.')[-1]=='txt':
-            #     basename='_'.join(rootname.split('_')[:-1])+'.paramnames'
-            #     print('loading parameter names from: ',basename)
-            #     self.samples.setParamNames(basename)
-                
-        def thin(self,nminwin=1,nthin=0):
-            if nthin < 0:
-                ncorr=max(1,int(self.samples.getCorrelationLength(nminwin)))
-                self.logger.info('Acutocorrelation Length: ncorr=%s'%ncorr)                
-            else:
-                ncorr=nthin
-
-            if ncorr==1:
-                return
+                s=self.chains[0]
+                nrow=len(s)
+                rowid=range(nrow)
+                ix=np.random.choice(rowid,size=nrow/2,replace=False)
+                not_ix = np.setxor1d(rowid, ix) 
+                #now split
+                text='single chain with nrow={} split to ns1={}, ns2={}'
+                self.logger.info(text.format(nrow, len(ix),len(not_ix)))
+                s1=s[ix,:]
+                s2=s[not_ix,:]
+            #change to dict
+            s1_dict =  {'weights':s1[:,0],'loglikes':s1[:,1],'samples':s1[:,2:]}
+            s2_dict =  {'weights':s2[:,0],'loglikes':s2[:,1],'samples':s2[:,2:]}                        
+        else:
+            #no split, so just assign s1 and s2 to same array
+            s1=np.concatenate(self.chains)
+            s1_dict = {'weights':s1[:,0],'loglikes':s1[:,1],'samples':s1[:,2:]}
+            s2_dict = {'weights':None,'loglikes':None,'samples':None}
             
-            try:
-            #if True:
-                norig=len(self.samples.weights)
+        #free array    
+        self.chains = None
 
-                if ncorr<1:
-                    #poisson thinning
-                    ixw_dict = poisson_thin(self.samples.weights,ncorr)
-                else:
-                    #get weighted thin
-                    try:
-                        ixw_dict = thin_indices(self.samples.weights,ncorr)
-                    except:
-                        ixw_dict = weighted_thin(self.samples.weights,ncorr)
-                #--
-                new_w=ixw_dict['w']
-                thin_ix=ixw_dict['ix']
-                
-                #copy the new weight
-                self.samples.weights=ixw_dict['w']
-                
-                #apply thinning
-                #print('thin_ix',type(thin_ix),type(thin_ix[0]),len(thin_ix),thin_ix[0:10])
-                self.samples.setSamples(self.samples.samples[thin_ix, :],
-                                            self.samples.weights,
-                                            self.samples.loglikes[thin_ix])
-                                            
-                print('Average thinned weight:',np.mean(self.samples.weights))
-                
-                #copy the new weight
-                self.adjusted_weights=np.copy(self.samples.weights)
-            
-                #self.samples.thin(ncorr)
-                nnew=len(self.samples.weights)
-                logger.info('Thinning with thin length={} #old_chain={},#new_chain={}'.format(ncorr,norig,nnew))
-            except:
-            #else:
-                self.logger.info('Thinning not possible. Weight must be interger to apply thinning.')
-                raise
-            
-        def removeBurn(self,remove=0.2):
-            self.logger.info('Removed %s as burn in' % remove)
-            self.samples.removeBurn(remove)
-            
-        def arrays(self):            
-            s=self.samples.samples
-            lnp=-self.samples.loglikes
-            w=self.samples.weights
-            return s, lnp, w
-            
-        def info(self): 
-            #these are just to show getdist functionalities
-            print(self.samples.PCA(['x1','x2']))
-            print(self.samples.getTable().tableTex())
-            print(self.samples.getInlineLatex('x1',limit=1))
-
-except:
+        # a copy of the weights that can be altered to
+        # independently to the original weights
+        s1_dict['aweights']=np.copy(s1_dict['weights'])
+        s2_dict['aweights']=np.copy(s2_dict['weights'])        
+       
+        return s1_dict,s2_dict
     
-    '''
-    getdist is not installed
-    use a simple chain reader
-    '''
-    class MCSamples(object):
-
-        def __init__(self,str_or_dict,trueval=None,debug=False,
-                    names=None,labels=None,px='x',**kwargs):
-            #Get the getdist MCSamples objects for the samples, specifying same parameter
-            #names and labels; if not specified weights are assumed to all be unity
-
-            if debug:
-                logging.basicConfig(level=logging.DEBUG)
-            self.logger = logging.getLogger(__name__)
-                
-            if isinstance(str_or_dict,str):                
-                fileroot=str_or_dict
-                self.logger.info('Loading chain from '+fileroot)                
-                d = self.load_from_file(fileroot,**kwargs)                
-            elif isinstance(str_or_dict,dict):                
-                d=str_or_dict
+    def load_from_file(self,fname,**kwargs):
+        self.logger.debug('''Loading file assuming CosmoMC columns order: 
+                           weight loglike param1 param2 ...''')
+        self.chains=[]
+        
+        try:
+            d=np.loadtxt(fname)
+            self.chains.append(d)            
+            self.logger.info(' loaded file: '+fname)
+        except:
+            idchain=kwargs.pop('idchain', 0)
+            if idchain>0:
+                f=fname+'_{}.txt'.format(idchain)
+                d=np.loadtxt(f)
+                self.chains.append(d)                
+                self.logger.info(' loaded file: '+f)                    
             else:
-               self.logger.info('Passed first argument type is: %s'%type(str_or_dict))                
-               self.logger.error('first argument to samples2getdist should be a string or dict.')
-               raise
-           
-            self.samples=d['samples']
-            self.loglikes=d['loglikes']
-            self.weights=d['weights'] if 'weights' in d.keys() else np.ones(len(self.loglikes))
-            ndim=self.get_shape()[1]
+                self.logger.info(' loading files: '+fname+'*.txt')                    
+                for f in glob.glob(os.path.join(fname,'*.txt')):
+                    self.logger.debug('loading: '+f)
+                    self.chains.append(np.loadtxt(f))
 
-            if names is None:
-                names = ["%s%s"%('p',i) for i in range(ndim)]
-            if labels is None:
-                labels =  ["%s_%s"%(px,i) for i in range(ndim)]
-
-            self.names=names
-            self.labels=labels
-            self.trueval=trueval
-            self.nparamMC=self.get_shape()[1]
-
-            # a copy of the weights that can be altered to
-            # independently to the original weights
-            self.adjusted_weights=np.copy(self.weights)
+        return self.chains2samples()
             
-        def get_shape(self):            
-            return self.samples.shape
-
-        def importance_sample(self,isfunc):
-            #importance sample with external function
-            self.logger.info('Importance sampling ..')
-            negLogLikes=isfunc(self.samples)
-            scale=0 #negLogLikes.min()
-            self.adjusted_weights *= np.exp(-(negLogLikes-scale))                     
-
-        def load_from_file(self,fname,**kwargs):
-            self.logger.warn('Loading file assuming CosmoMC columns order: weight loglike param1 param2 ...')
-            try:
-                DataTable=np.loadtxt(fname)
-                self.logger.info(' loaded file: '+fname)
-            except:
-                d=[]
-                idchain=kwargs.pop('idchain', 0)
-                if idchain>0:
-                    f=fname+'_{}.txt'.format(idchain)
-                    DataTable=np.loadtxt(f)
-                    self.logger.info(' loaded file: '+f)                    
-                else:
-                    self.logger.info(' loaded files: '+os.path.join(fname, '*.txt'))
-                    for f in glob.glob(os.path.join(fname, '*.txt')):
-                        d.append(np.loadtxt(f))
-                        
-                    DataTable=np.concatenate(d)
-
-            chain_dict={}
-            #chain_dict['samples']=np.zeros((len(DataTable), ndim))
-            chain_dict['weights']  =  DataTable[:,0]
-            chain_dict['loglikes'] = DataTable[:,1]
-            chain_dict['samples'] =  DataTable[:,2:]
-
-            return chain_dict
-
-        def thin(self,nthin=1):
-            if nthin==1:
-                return
-            
-            try:
-                norig=len(self.weights)
-
-                if nthin<1:
-                    ixw_dict = poisson_thin(self.weights,nthin)
-                else:
-                    #call weighted thinning                    
-                    try:
-                        #if weights are integers, use getdist algorithm
-                        ixw_dict = thin_indices(self.weights,ncorr)
-                    except:
-                        #if weights are not integers, use internal algorithm
-                        ixw_dict = weighted_thin(self.weights,ncorr)
-                    
-                self.weights=ixw_dict['w']
-                thin_ix=ixw_dict['ix']
-                
-                #now thin samples and related quantities
-                self.samples=self.samples[thin_ix, :]
-                self.loglikes=self.loglikes[thin_ix]
-
-                self.adjusted_weights=self.weights.copy()
-                
-                nnew=len(self.weights)
-                logger.info('Thinning with thin length={} #old_chain={},#new_chain={}'.format(nthin,norig,nnew))                
-            except:
-                self.logger.info('Thinning not possible.')
-                raise
-
-        def removeBurn(self,remove=0):
-            nstart=remove
-            if remove<1:
-                self.logger.info('Removed %s as burn in' % remove)
-                nstart=int(len(self.loglikes)*remove)
-            else:
-                self.logger.info('burn-in: Removing the first {} rows of the chain'.format(remove))
-                
-            self.samples=self.samples[nstart:, :]
-            self.loglikes=self.loglikes[nstart:]
-            self.weights=self.weights[nstart:]                
-
-        def arrays(self):            
-            s=self.samples
-            lnp=-self.loglikes
-            w=self.weights
-            return s, lnp, w
            
 #============================================================
 #======  Here starts the main Evidence calculation code =====
@@ -508,7 +437,7 @@ except:
 
 class MCEvidence(object):
     def __init__(self,method,ischain=True,isfunc=None,
-                     thinlen=0.0,burnlen=0.0,
+                     thinlen=0.0,burnlen=0.0,split=False,
                      ndim=None, kmax= 5, 
                      priorvolume=1,debug=False,
                      nsample=None,
@@ -547,19 +476,23 @@ class MCEvidence(object):
         :param verbose: chattiness of the run
         
         """
-        #
-        logging.basicConfig(level=logging.INFO)        
+        logging.basicConfig(level=logging.DEBUG,format=FORMAT)
+        self.logger = logging.getLogger(__name__) # +self.__class__.__name__)
+        #self.logger.addHandler(handler)
+        
         self.verbose=verbose
-        if debug or verbose>1: logging.basicConfig(level=logging.DEBUG)
+        self.debug=False
+        if debug or verbose>1:
+            self.debug=True
+            self.logger.setLevel(logging.DEBUG)    
         if verbose==0:
-            logger.setLevel(logging.WARNING)
-            logging.basicConfig(level=logging.WARNING)            
+            self.logger.setLevel(logging.WARNING)            
 
-        self.logger = logging.getLogger(__name__)
         #print('log level: ',logging.getLogger().getEffectiveLevel())
         
         self.info={}
         #
+        self.split=split
         self.nbatch=nbatch
         self.brange=brange #todo: check for [N] 
         self.bscale=bscale if not isinstance(self.brange,int) else 'constant'
@@ -583,7 +516,7 @@ class MCEvidence(object):
             
             if isinstance(method,str):
                 self.fname=method      
-                self.logger.debug('Using chains: ',method)
+                self.logger.debug('Using chains: %s'%method)
             else:
                 self.logger.debug('dictionary of samples and loglike array passed')
                 
@@ -601,10 +534,10 @@ class MCEvidence(object):
                 XClass=method
             
             if hasattr(XClass, '__class__'):
-                self.logger.debug(__name__+': method is an instance of a class')
+                self.logger.debug('method is an instance of a class')
                 self.method=XClass
             else:
-                self.logger.debug(__name__+': method is class variable .. instantiating class')
+                self.logger.debug('method is class variable .. instantiating class')
                 self.method=XClass(*args)                
                 #if passed class has some info, display it
                 try:
@@ -618,17 +551,20 @@ class MCEvidence(object):
                 method=self.method.Sampler(nsamples=self.nsamples)                                 
                 
         #======== By this line we expect only chains either in file or dict ====
-        self.gd = MCSamples(method,debug=verbose>1,**gdkwargs)
+        self.gd = MCSamples(method,split=self.split,debug=self.debug,**gdkwargs)
 
         if burnlen>0:
-            _=self.gd.removeBurn(remove=burnlen)
+            _=self.gd.removeBurn(remove=burnlen,name='s1')
+            if self.split: _=self.gd.removeBurn(remove=burnlen,name='s2')            
         if np.abs(thinlen)>0:
-            self.logger.info('applying weighted thinning with thin length=%s'%thinlen)
-            _=self.gd.thin(nthin=thinlen)        
+            self.logger.debug('applying weighted thinning with thin length=%s'%thinlen)
+            _=self.gd.thin(nthin=thinlen,name='s1')
+            if self.split: _=self.gd.thin(nthin=thinlen,name='s2')               
 
         if isfunc:
             #try:
-            self.gd.importance_sample(isfunc)
+            self.gd.importance_sample(isfunc,name='s1')
+            if self.split: self.gd.importance_sample(isfunc,name='s2')            
             #except:
             #    self.logger.warn('Importance sampling failed. Make sure getdist is installed.')
                
@@ -644,14 +580,13 @@ class MCEvidence(object):
         #
         self.info['NparamsCosmo']=self.ndim
         self.info['Nsamples']=self.nsample
-        #
-        #self.info['MaxAutoCorrLen']=np.array([self.gd.samples.getCorrelationLength(j) for j in range(self.ndim)]).max()
-
-        #print('***** ndim,nparamMC,MaxAutoCorrLen :',self.ndim,self.nparamMC,self.info['MaxAutoCorrLen'])
         
-        #print('init minmax logl',method['lnprob'].min(),method['lnprob'].max())            
-        self.logger.info('chain array dimensions: %s x %s ='%(self.nsample,self.ndim))
-            
+        if self.debug:
+            print('partition s1.shape',self.gd.get_shape(name='s1'))
+            if split:
+                print('partition s2.shape',self.gd.get_shape(name='s2'))            
+        #
+        self.logger.info('chain array dimensions: %s x %s ='%(self.nsample,self.ndim))            
         #
         self.set_batch()
 
@@ -708,7 +643,9 @@ class MCEvidence(object):
                 self.powers=self.idbatch
                 self.nchain=np.array([x for x in self.bsize.cumsum()])
             
-    def get_samples(self,nsamples,istart=0,rand=False):    
+    def get_samples(self,nsamples,istart=0,
+                        rand=False,name='s1',
+                        prewhiten=True):    
         # If we are reading chain, it will be handled here 
         # istart -  will set row index to start getting the samples 
 
@@ -716,17 +653,56 @@ class MCEvidence(object):
         
         if rand and not self.brange is None:
             if nsamples>ntot:
-                self.logger.error('nsamples=%s, ntotal_chian=%s'%(nsamples,ntot))
+                self.logger.error('partition %s nsamples=%s, ntotal_chian=%s'%(name,nsamples,ntot))
                 raise
             
             idx=np.random.randint(0,high=ntot,size=nsamples)
         else:
             idx=np.arange(istart,nsamples+istart)
 
-        self.logger.info('requested nsamples=%s, ntotal_chian=%s'%(nsamples,ntot))
-        s,lnp,w=self.gd.arrays()            
+        self.logger.debug('partition %s requested nsamples=%s, ntotal_chian=%s'%(name,nsamples,ntot))
+        s,lnp,w=self.gd.arrays(name)
+
+        #trim 
+        s,lnp,w = s[idx,0:self.ndim],lnp[idx],w[idx]
+        
+        if prewhiten:
+            self.logger.debug('Prewhitenning chain partition: %s '%name)
+            try:
+                # Covariance matrix of the samples, and eigenvalues (in w) and eigenvectors (in v):
+                ChainCov = np.cov(s.T)
                 
-        return s[idx,0:self.ndim],lnp[idx],w[idx]
+                eigenVal,eigenVec = np.linalg.eig(ChainCov)
+                #check for negative eigenvalues
+                if (eigenVal>0).any():
+                    self.logger.warn("Some of the eigenvalues of the covariance matrix are negative and/or complex:")
+                    for i,e in enumerate(eigenVal):
+                        print("Eigenvalue Param_{} = {}".format(i,e))
+                    print("")
+                    print("=================================================================================")
+                    print("        Chain is not diagonalized! Estimated Evidence may not be accurate!       ")
+                    print("              Consider using smaller set of parameters using --ndim              ")
+                    print("=================================================================================")
+                    print("")                    
+                    #no diagonalisation
+                    Jacobian=1                           
+                else:
+                    #all eigenvalues are positive
+                    Jacobian = math.sqrt(np.linalg.det(ChainCov))
+                    # Prewhiten:  First diagonalise:
+                    s = np.dot(s,eigenVec);
+                    # And renormalise new parameters to have unit covariance matrix:
+                    for i in range(self.ndim):
+                        s[:,i]= s[:,i]/math.sqrt(eigenVal[i])
+                
+            except:
+                    self.logger.error("Unknown error during diagonalizing the chain with its covariance matrix.")
+        else:
+            #no diagonalisation
+            Jacobian=1
+        
+                
+        return s,lnp,w,Jacobian
         
 
     def evidence(self,verbose=None,rand=False,info=False,
@@ -735,6 +711,13 @@ class MCEvidence(object):
         '''
 
         MARGINAL LIKELIHOODS FROM MONTE CARLO MARKOV CHAINS algorithm described in Heavens et. al. (2017)
+
+        If SPLIT=TRUE:
+          EVIDENCE IS COMPUTED USING TWO INDEPENDENT CHAINS. THIS MEANS
+          NEAREST NEIGHBOUR OF POINT "A" IN AN MCMC SAMPLE MC1 IS SEARCHED IN MCMC SAMPLE MC2.
+          THE ERROR ON THE EVIDENCE FROM (AUTO) EVIDENCE IS LARGER THAT CROSS EVIDENCE BY SQRT(2)
+          DUE TO THE FOLLOWING:
+              if the nearest neighbour to A is B, then the NN to B will be A
        
         Parameters
         ---------
@@ -789,7 +772,7 @@ class MCEvidence(object):
         else:
             logPriorVolume=math.log(pvolume)            
 
-        self.logger.debug('log prior volume: ',logPriorVolume)
+        self.logger.debug('log prior volume: %s'%logPriorVolume)
             
         kmax=self.kmax
         ndim=self.ndim
@@ -810,9 +793,10 @@ class MCEvidence(object):
             indices = np.zeros((S,kmax))
             volume  = np.zeros((S,kmax))
 
-            samples_raw = np.zeros((S,ndim))
-            samples_raw_cmc,logL,weight=self.get_samples(S,istart=itot,rand=rand)
-            samples_raw[:,0:ndim] =  samples_raw_cmc[:,0:ndim]
+            samples,logL,weight,Jacobian=self.get_samples(S,istart=itot,
+                                                            rand=rand,
+                                                            prewhiten=prewhiten,
+                                                              name='s1')
             
             #We need the logarithm of the likelihood - not the negative log
             if pos_lnp: logL=-logL
@@ -821,28 +805,6 @@ class MCEvidence(object):
             logLmax = np.amax(logL)
             fs    = logL-logLmax
                         
-            #print('(mean,min,max) of LogLikelihood: ',fs.mean(),fs.min(),fs.max())
-            
-            if prewhiten:
-                self.logger.info('Prewhitenning chains using sample covariance matrix ..')
-                # Covariance matrix of the samples, and eigenvalues (in w) and eigenvectors (in v):
-                ChainCov = np.cov(samples_raw.T)
-                eigenVal,eigenVec = np.linalg.eig(ChainCov)                
-                Jacobian = math.sqrt(np.linalg.det(ChainCov))
-
-                # Prewhiten:  First diagonalise:
-                samples = np.dot(samples_raw,eigenVec);
-
-                #print('EigenValues.shape,ndim',eigenVal.shape,ndim)
-                #print('EigenValues=',eigenVal)
-                # And renormalise new parameters to have unit covariance matrix:
-                for i in range(ndim):
-                    samples[:,i]= samples[:,i]/math.sqrt(eigenVal[i])
-            else:
-                #no diagonalisation
-                Jacobian=1
-                samples=samples_raw
-
             #print('samples, after prewhiten', samples[1000:1010,0:ndim])
             #print('Loglikes ',logLmax,logL[1000:1010],fs[1000:1010])
             #print('weights',weight[1000:1010])
@@ -850,12 +812,27 @@ class MCEvidence(object):
             
             # Use sklearn nearest neightbour routine, which chooses the 'best' algorithm.
             # This is where the hard work is done:
-            nbrs = NearestNeighbors(n_neighbors=kmax+1, 
+            if self.split:
+                samples2,logL2,weight2,Jacobian2=self.get_samples(S,istart=itot,
+                                                            rand=rand,
+                                                            prewhiten=prewhiten,
+                                                              name='s2')
+                
+                #indexing for knn is done using a different MCMC sample
+                nbrs = NearestNeighbors(n_neighbors=kmax+1, 
+                                    algorithm='auto',n_jobs=nproc).fit(samples2)
+                k0=0 #k0 is the first knn
+            else:
+                #indexing for knn is done with the same MCMC samples
+                k0=1 #avoid nn which is the point itself
+                nbrs = NearestNeighbors(n_neighbors=kmax+1, 
                                     algorithm='auto',n_jobs=nproc).fit(samples)
+                
+            #compute knn distance. If indexed in same samples, DkNN(k=1)=0 
             DkNN, indices = nbrs.kneighbors(samples)                
     
             # Create the posterior for 'a' from the distances (volumes) to nearest neighbour:
-            for k in range(1,self.kmax):
+            for k in range(k0,self.kmax):
                 for j in range(0,S):        
                     # Use analytic formula for the volume of ndim-sphere:
                     volume[j,k] = math.pow(math.pi,ndim/2)*math.pow(DkNN[j,k],ndim)/sp.gamma(1+ndim/2)
@@ -868,10 +845,13 @@ class MCEvidence(object):
                 dotp = np.dot(volume[:,k]/weight[:],np.exp(fs))
         
                 # The MAP value of 'a' is obtained analytically from the expression for the posterior:
-                amax = dotp/(S*k+1.0)
+                k_nn=k
+                if k0==0:
+                    k_nn=k+1
+                amax = dotp/(S*k_nn+1.0)
     
                 # Maximum likelihood estimator for the evidence
-                SumW     = np.sum(self.gd.adjusted_weights)
+                SumW     = np.sum(self.gd.data['s1'].adjusted_weights)
                 self.logger.debug('********sumW={0},np.sum(Weight)={1}'.format(SumW,np.sum(weight)))
                 MLE[ipow,k] = math.log(SumW*amax*Jacobian) + logLmax - logPriorVolume
 
@@ -911,9 +891,7 @@ class MCEvidence(object):
             return MLE, self.info
         else:  
             return MLE
-    
-           
-#===============================================
+        
 #===============================================
 
 # The next two functions are directly taken from montepythons analyze.py
@@ -1049,11 +1027,11 @@ if __name__ == '__main__':
                              If thinlen>1, weighted thinning based on getdist algorithm 
                              If thinlen<0, thinning length will be the autocorrelation length of the chain
                              ''')
-    parser.add_argument("-v", "--verbose",
+    parser.add_argument("-vb", "--verbose",
                         dest="verbose",
                         default=1,
                         type=int,
-                        help="increase output verbosity")
+                        help="Increase output verbosity: 0: WARNNINGS, 1: INFO, 2: DEBUG, >2: EVERYTHING")
 
     parser.add_argument('--cosmo', help='flag to compute prior_volume using cosmological parameters only',
                         action='store_true')
@@ -1070,8 +1048,12 @@ if __name__ == '__main__':
     burnlen=args.burnlen
     thinlen=args.thinlen
     verbose=args.verbose
+
+    logger = logging.getLogger(__name__)
     
-    if verbose>1: logging.basicConfig(level=logging.DEBUG)
+    if verbose>1:
+        logger.setLevel(logging.DEBUG)
+        
     try:
         parMC=params_info(method,cosmo=args.verbose)
         if verbose>1: print(parMC)
