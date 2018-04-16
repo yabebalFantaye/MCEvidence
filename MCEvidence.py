@@ -27,6 +27,7 @@ import importlib
 import itertools
 from functools import reduce
 import io
+from abc import ABC, abstractmethod
 
 import tempfile 
 import os
@@ -102,12 +103,21 @@ class data_set(object):
         self.adjusted_weights=d['aweights']
 
         
-class SamplesMIXIN(object):
-    '''The following routines must be defined to use this class:
+class SamplesMIXIN(ABC):
+    '''
+    The following routines must be defined to use this class:
        __init__:  where certain variables are defined
        load_from_file: where data is read from file and 
                        returned as python dict
     '''
+
+    @abstractmethod
+    def __init__(self):
+        pass
+
+    @abstractmethod
+    def load_from_file(self):
+        pass
     
     def setup(self,str_or_dict,**kwargs):
         #Get the getdist MCSamples objects for the samples, specifying same parameter
@@ -120,28 +130,28 @@ class SamplesMIXIN(object):
         if self.debug:        
             self.logger.setLevel(logging.DEBUG)
             
-        #read MCMC samples from file or dict
+        #read MCMC samples from file
         if isinstance(str_or_dict,str):                
             fileroot=str_or_dict
             self.logger.info('Loading chain from '+fileroot)                
-            s1,s2 = self.load_from_file(fileroot,**kwargs)
-            self.data={'s1':data_set(s1),'s2':data_set(s2)}
+            s1,s2 = self.load_from_file(fileroot,**kwargs)            
             
-        # TODO: implement s1_s2 when dict is passed
-        #elif isinstance(str_or_dict,dict):                
-        #    d=str_or_dict
-        
+        #MCMC chains are passed as dict, list or tuple
+        elif isinstance(str_or_dict,(dict,list,tuple)):
+            if isinstance(str_or_dict,(list,tuple)):
+                self.chains=str_or_dict
+            else:
+                self.chains=str_or_dict.values()
+            s1,s2=self.chains2samples()
+            
+        #MCMC chains passed in unsupported format
         else:
-           self.logger.info('Passed first argument type is: %s'%type(str_or_dict))                
-           self.logger.error('first argument to samples2getdist should be a string or dict.')
-           raise
+            self.logger.info('Passed first argument type is: %s'%type(str_or_dict))                
+            self.logger.error('first argument to samples2getdist should be a file name string, list, tuple or dict.')
+            raise
 
-        #self.samples=s1_s2['s1']['samples']
-        #self.loglikes=s1_s2['s1']['loglikes']
-        #self.weights=s1_s2['s1']['weights']
-        
-        #if 'weights' in d.keys() else np.ones(len(self.loglikes))
-
+        #now data is 
+        self.data={'s1':data_set(s1),'s2':data_set(s2)}
 
         ndim=self.get_shape()[1]
 
@@ -157,7 +167,58 @@ class SamplesMIXIN(object):
             
         self.nparamMC=self.get_shape()[1]
 
-    
+
+    def chains2samples(self):
+        """
+        Combines separate chains into one samples array, so self.samples has all the samples
+        and this instance can then be used as a general :class:`~.chains.WeightedSamples` instance.
+
+        :return: self
+        """
+        if self.chains is None:
+            self.logger.error('The chains array is empty!')
+            raise
+        #
+        nchains=len(self.chains)
+        #
+        self.chain_offsets = np.cumsum(np.array([0] + [chain.shape[0] for chain in self.chains]))
+        if self.split:
+            if nchains>1:
+                text='''partition {} chains in two sets  
+                        chains 1:{} in one,  the {}th chain in the other'''
+                self.logger.info(text.format(nchains,nchains-1,nchains)) 
+                s1=np.concatenate(self.chains[0:-1])
+                s2=self.chains[-1]
+            else:
+                s=self.chains[0]
+                nrow=len(s)
+                rowid=range(nrow)
+                ix=np.random.choice(rowid,size=nrow/2,replace=False)
+                not_ix = np.setxor1d(rowid, ix) 
+                #now split
+                text='single chain with nrow={} split to ns1={}, ns2={}'
+                self.logger.info(text.format(nrow, len(ix),len(not_ix)))
+                s1=s[ix,:]
+                s2=s[not_ix,:]
+            #change to dict
+            s1_dict =  {'weights':s1[:,0],'loglikes':s1[:,1],'samples':s1[:,2:]}
+            s2_dict =  {'weights':s2[:,0],'loglikes':s2[:,1],'samples':s2[:,2:]}                        
+        else:
+            #no split, so just assign s1 and s2 to same array
+            s1=np.concatenate(self.chains)
+            s1_dict = {'weights':s1[:,0],'loglikes':s1[:,1],'samples':s1[:,2:]}
+            s2_dict = {'weights':None,'loglikes':None,'samples':None}
+            
+        #free array    
+        self.chains = None
+
+        # a copy of the weights that can be altered to
+        # independently to the original weights
+        s1_dict['aweights']=np.copy(s1_dict['weights'])
+        s2_dict['aweights']=np.copy(s2_dict['weights'])        
+       
+        return s1_dict,s2_dict
+        
     def get_shape(self,name='s1'):
         return self.data[name].samples.shape
 
@@ -355,79 +416,43 @@ class MCSamples(SamplesMIXIN):
             
         self.setup(str_or_dict,**kwargs)
 
-    def chains2samples(self):
-        """
-        Combines separate chains into one samples array, so self.samples has all the samples
-        and this instance can then be used as a general :class:`~.chains.WeightedSamples` instance.
 
-        :return: self
-        """
-        if self.chains is None:
-            self.logger.error('The chains array is empty!')
-            raise
-        #
-        nchains=len(self.chains)
-        #
-        self.chain_offsets = np.cumsum(np.array([0] + [chain.shape[0] for chain in self.chains]))
-        if self.split:
-            if nchains>1:
-                text='''partition {} chains in two sets  
-                        chains 1:{} in one,  the {}th chain in the other'''
-                self.logger.info(text.format(nchains,nchains-1,nchains)) 
-                s1=np.concatenate(self.chains[0:-1])
-                s2=self.chains[-1]
-            else:
-                s=self.chains[0]
-                nrow=len(s)
-                rowid=range(nrow)
-                ix=np.random.choice(rowid,size=nrow/2,replace=False)
-                not_ix = np.setxor1d(rowid, ix) 
-                #now split
-                text='single chain with nrow={} split to ns1={}, ns2={}'
-                self.logger.info(text.format(nrow, len(ix),len(not_ix)))
-                s1=s[ix,:]
-                s2=s[not_ix,:]
-            #change to dict
-            s1_dict =  {'weights':s1[:,0],'loglikes':s1[:,1],'samples':s1[:,2:]}
-            s2_dict =  {'weights':s2[:,0],'loglikes':s2[:,1],'samples':s2[:,2:]}                        
-        else:
-            #no split, so just assign s1 and s2 to same array
-            s1=np.concatenate(self.chains)
-            s1_dict = {'weights':s1[:,0],'loglikes':s1[:,1],'samples':s1[:,2:]}
-            s2_dict = {'weights':None,'loglikes':None,'samples':None}
-            
-        #free array    
-        self.chains = None
-
-        # a copy of the weights that can be altered to
-        # independently to the original weights
-        s1_dict['aweights']=np.copy(s1_dict['weights'])
-        s2_dict['aweights']=np.copy(s2_dict['weights'])        
-       
-        return s1_dict,s2_dict
-    
+    def read_list_to_array(self,flist):
+        chains=[]
+        for f in flist:
+            self.logger.info('loading: '+f)            
+            chains.append(np.loadtxt(f))
+        return chains
+        
     def load_from_file(self,fname,**kwargs):
         self.logger.debug('''Loading file assuming CosmoMC columns order: 
                            weight loglike param1 param2 ...''')
-        self.chains=[]
         
+        #fname can be (a list of) string filename, or filename with wildcard
+        #to handle those possibilities, we use try..except case
         try:
-            d=np.loadtxt(fname)
-            self.chains.append(d)            
-            self.logger.info(' loaded file: '+fname)
-        except:
-            idchain=kwargs.pop('idchain', 0)
-            if idchain>0:
-                f=fname+'_{}.txt'.format(idchain)
-                d=np.loadtxt(f)
-                self.chains.append(d)                
-                self.logger.info(' loaded file: '+f)                    
+            #make fname file name list if it is not already
+            if not isinstance(fname,(list,tuple)):
+                flist=[fname]
             else:
-                self.logger.info(' loading files: '+fname+'*.txt')                    
-                for f in glob.glob(fname+'*.txt'):
-                    self.logger.debug('loading: '+f)
-                    self.chains.append(np.loadtxt(f))
-
+                flist=fname
+            #load files
+            self.chains=self.read_list_to_array(flist)
+        except:
+            #get file names from matching pattern
+            if '*' in fname or '?' in fname:
+                flist=glob.glob(fname)
+            else:
+                idchain=kwargs.pop('idchain', 0)
+                if idchain>0:
+                    flist=[fname+'_{}.txt'.format(idchain)]
+                else:                    
+                    idpattern=kwargs.pop('idpattern', '_*.txt')
+                    self.logger.info(' loading files: '+fname+idpattern)                    
+                    flist=glob.glob(fname)                
+                
+            #load files
+            self.chains=self.read_list_to_array(flist)                
         return self.chains2samples()
             
            
@@ -447,7 +472,7 @@ class MCEvidence(object):
                       verbose=1,args={},
                       **gdkwargs):
         """Evidence estimation from MCMC chains
-        :param method: chain name (str) or array (np.ndarray) or python class
+        :param method: chain names (str or list of strings) or list/tuple/dict of arrays (np.ndarray) or python class
                 If string or numpy array, it is interpreted as MCMC chain. 
                 Otherwise, it is interpreted as a python class with at least 
                 a single method sampler and will be used to generate chain.
@@ -516,9 +541,15 @@ class MCEvidence(object):
             
             if isinstance(method,str):
                 self.fname=method      
-                self.logger.debug('Using chains: %s'%method)
+                self.logger.debug('Using chain: %s'%method)
             else:
-                self.logger.debug('dictionary of samples and loglike array passed')
+                if not isinstance(method,dict):
+                    if isinstance(method[0],str):
+                        self.logger.debug('Using file name list: %s'%method)
+                    else:
+                        self.logger.debug('list/tuple of MCMC sample arrays')
+                else:
+                    self.logger.debug('dict of MCMC sample arrays')                    
                 
         else: #python class which includes a method called sampler
             
@@ -532,7 +563,8 @@ class MCEvidence(object):
                 XClass = getattr(sys.modules[__name__], method)
             else:
                 XClass=method
-            
+
+            # Output should be file name(s) or  list/tuple/dict of chains                
             if hasattr(XClass, '__class__'):
                 self.logger.debug('method is an instance of a class')
                 self.method=XClass
@@ -547,7 +579,6 @@ class MCEvidence(object):
                 except:
                     pass                        
                 # Now Generate samples.
-                # Output should be dict - {'chains':,'logprob':,'weight':} 
                 method=self.method.Sampler(nsamples=self.nsamples)                                 
                 
         #======== By this line we expect only chains either in file or dict ====
@@ -674,7 +705,7 @@ class MCEvidence(object):
                 
                 eigenVal,eigenVec = np.linalg.eig(ChainCov)
                 #check for negative eigenvalues
-                if (eigenVal>0).any():
+                if (eigenVal<0).any():
                     self.logger.warn("Some of the eigenvalues of the covariance matrix are negative and/or complex:")
                     for i,e in enumerate(eigenVal):
                         print("Eigenvalue Param_{} = {}".format(i,e))
