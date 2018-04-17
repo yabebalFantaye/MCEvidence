@@ -19,13 +19,11 @@ This code is tested in Python 2 version 2.7.12 and Python 3 version 3.5.2
 
 from __future__ import absolute_import
 from __future__ import print_function
-import subprocess
 import importlib
 import itertools
 from functools import reduce
 import io
-from abc import ABC, abstractmethod
-
+    
 import tempfile 
 import os
 import glob
@@ -68,7 +66,8 @@ logger.setLevel(logging.INFO)
 __author__ = "Yabebal Fantaye"
 __email__ = "yabi@aims.ac.za"
 __license__ = "MIT"
-__version__ = "0.2"
+__version_info__ = ('17','04','2018')
+__version__ = '-'.join(__version_info__)
 __status__ = "Development"
 
 desc='Planck Chains MCEvidence. Returns the log Bayesian Evidence computed using the kth NN'
@@ -99,21 +98,18 @@ class data_set(object):
         self.adjusted_weights=d['aweights']
 
         
-class SamplesMIXIN(ABC):
+class SamplesMIXIN(object):
     '''
     The following routines must be defined to use this class:
        __init__:  where certain variables are defined
        load_from_file: where data is read from file and 
                        returned as python dict
     '''
-
-    @abstractmethod
     def __init__(self):
-        pass
+        raise NotImplementedError()
 
-    @abstractmethod
     def load_from_file(self):
-        pass
+        raise NotImplementedError()
     
     def setup(self,str_or_dict,**kwargs):
         #Get the getdist MCSamples objects for the samples, specifying same parameter
@@ -1022,7 +1018,7 @@ def params_info(fname,cosmo=False, volumes={}):
 
 if __name__ == '__main__':
 
-    print('---')
+    #print('---')
     #---------------------------------------
     #---- Extract command line arguments ---
     #---------------------------------------
@@ -1032,7 +1028,10 @@ if __name__ == '__main__':
 
     # positional args
     parser.add_argument("root_name",help='Root filename for MCMC chains or python class filename')
-                        
+
+    vstring=">>>   %(prog)s :: {0} version date: {1}   <<<"
+    parser.add_argument('--version', action='version',
+                            version=vstring.format(__status__,__version__))    
     # optional args
     parser.add_argument("-k","--kmax",
                         dest="kmax",
@@ -1109,3 +1108,4 @@ if __name__ == '__main__':
 
     print('* ln(B)[k] is the natural logarithm of the Baysian evidence estimated using the kth Nearest Neighbour.')
     print('')
+
