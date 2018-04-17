@@ -521,14 +521,18 @@ class MCEvidence(object):
         self.nbatch=nbatch
         self.brange=brange #todo: check for [N] 
         self.bscale=bscale if not isinstance(self.brange,int) else 'constant'
-        
+        #
+        self.snames=['s1']
+        if self.split:
+            self.snames.append('s2')
+        #
         # The arrays of powers and nchain record the number of samples 
         # that will be analysed at each iteration. 
         #idtrial is just an index
         self.idbatch=np.arange(self.nbatch,dtype=int)
-        self.powers  = np.zeros(self.nbatch)
-        self.bsize  = np.zeros(self.nbatch,dtype=int)
-        self.nchain  = np.zeros(self.nbatch,dtype=int)               
+        self.powers  = np.zeros((self.nbatch,len(self.snames)))
+        self.bsize  = np.zeros((self.nbatch,len(self.snames)),dtype=int)
+        self.nchain  = np.zeros((self.nbatch,len(self.snames)),dtype=int)               
         #
         self.kmax=max(2,kmax)
         self.priorvolume=priorvolume
@@ -605,12 +609,12 @@ class MCEvidence(object):
         #
 
         #after burn-in and thinning
-        self.nsample = self.gd.get_shape()[0]            
+        self.nsample = [self.gd.get_shape(name=s)[0] for s in self.snames]
         if ndim is None: ndim=self.gd.nparamMC        
         self.ndim=ndim        
         #
         self.info['NparamsCosmo']=self.ndim
-        self.info['Nsamples']=self.nsample
+        self.info['Nsamples']=', '.join([str(x) for x in self.nsample])
         
         if self.debug:
             print('partition s1.shape',self.gd.get_shape(name='s1'))
@@ -654,25 +658,29 @@ class MCEvidence(object):
         if self.brange is None: 
             self.bsize=self.brange #check
             powmin,powmax=None,None
-            self.nchain[0]=self.nsample
-            self.powers[0]=np.log10(self.nsample)
+            for ix, nn in enumerate(self.nsample):
+                self.nchain[0,ix]=nn
+                self.powers[0,ix]=np.log10(nn)
         else:
             if bscale=='logpower':
                 powmin,powmax=self.get_batch_range()
-                self.powers=np.linspace(powmin,powmax,self.nbatch)
-                self.bsize = np.array([int(pow(10.0,x)) for x in self.powers])
+                for ix, nn in enumerate(self.nsample):                
+                    self.powers[:,ix]=np.linspace(powmin,powmax,self.nbatch)
+                    self.bsize[:,ix] = np.array([int(pow(10.0,x)) for x in self.powers])
                 self.nchain=self.bsize
 
             elif bscale=='linear':   
                 powmin,powmax=self.get_batch_range()
-                self.bsize=np.linspace(powmin,powmax,self.nbatch,dtype=np.int)
-                self.powers=np.array([int(log10(x)) for x in self.nchain])
+                for ix, nn in enumerate(self.nsample):                 
+                    self.bsize[:,ix]=np.linspace(powmin,powmax,self.nbatch,dtype=np.int)
+                    self.powers[:,ix]=np.array([int(log10(x)) for x in self.nchain])
                 self.nchain=self.bsize
 
             else: #constant
-                self.bsize=self.brange #check
-                self.powers=self.idbatch
-                self.nchain=np.array([x for x in self.bsize.cumsum()])
+                self.bsize[:,:]=self.brange #check
+                self.powers[:,:]=self.idbatch
+                for ix, nn in enumerate(self.nsample):                 
+                    self.nchain[:,ix]=np.array([x for x in self.bsize[:,ix].cumsum()])
             
     def get_samples(self,nsamples,istart=0,
                         rand=False,name='s1',
@@ -680,21 +688,22 @@ class MCEvidence(object):
         # If we are reading chain, it will be handled here 
         # istart -  will set row index to start getting the samples 
 
-        ntot=self.gd.get_shape()[0]
+        ntot=self.gd.get_shape(name)[0]
         
         if rand and not self.brange is None:
             if nsamples>ntot:
                 self.logger.error('partition %s nsamples=%s, ntotal_chian=%s'%(name,nsamples,ntot))
                 raise
             
-            idx=np.random.randint(0,high=ntot,size=nsamples)
+            idx=np.random.randint(0,high=ntot,size=nsamples) 
         else:
             idx=np.arange(istart,nsamples+istart)
 
         self.logger.debug('partition %s requested nsamples=%s, ntotal_chian=%s'%(name,nsamples,ntot))
         s,lnp,w=self.gd.arrays(name)
 
-        #trim 
+        #trim
+        #print('n,s.shape,idx.min,idx.max',nsamples,s.shape,idx.min(),idx.max())
         s,lnp,w = s[idx,0:self.ndim],lnp[idx],w[idx]
         
         if prewhiten:
@@ -819,7 +828,7 @@ class MCEvidence(object):
         # Loop over different numbers of MCMC samples (=S):
         itot=0
         for ipow,nsample in zip(self.idbatch,self.nchain):                
-            S=int(nsample)            
+            S=int(nsample[0])            
             DkNN    = np.zeros((S,kmax))
             indices = np.zeros((S,kmax))
             volume  = np.zeros((S,kmax))
@@ -844,7 +853,7 @@ class MCEvidence(object):
             # Use sklearn nearest neightbour routine, which chooses the 'best' algorithm.
             # This is where the hard work is done:
             if self.split:
-                samples2,logL2,weight2,Jacobian2=self.get_samples(S,istart=itot,
+                samples2,logL2,weight2,Jacobian2=self.get_samples(nsample[1],istart=itot,
                                                             rand=rand,
                                                             prewhiten=prewhiten,
                                                               name='s2')
