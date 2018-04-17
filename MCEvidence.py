@@ -1,8 +1,5 @@
 #!usr/bin/env python
 """
-Version : 0.1.1
-Date : 1st March 2017
-
 Authors : Yabebal Fantaye
 Email : yabi@aims.ac.za
 Affiliation : African Institute for Mathematical Sciences - South Africa
@@ -68,11 +65,10 @@ logging.basicConfig(level=logging.DEBUG,format=FORMAT)
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-
 __author__ = "Yabebal Fantaye"
 __email__ = "yabi@aims.ac.za"
 __license__ = "MIT"
-__version__ = "0.1"
+__version__ = "0.2"
 __status__ = "Development"
 
 desc='Planck Chains MCEvidence. Returns the log Bayesian Evidence computed using the kth NN'

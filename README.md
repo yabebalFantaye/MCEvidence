@@ -7,7 +7,20 @@ This code is tested in Python 2 version 2.7.12 and Python 3 version 3.5.2.
 
 The MCEvidence algorithm is implemented using scikit nearest neighbour code.
 
+# Installation
 
+To install this project into your machine using pip, do the following
+                        
+     $ git clone https://github.com/yabebalFantaye/MCEvidence
+     $ cd MCEvidence
+     $ pip install . --editable
+
+The "--editable" or "-e" extension in the last command is to install the project in the editable mode.
+
+To install this project with pip without clonning
+
+     $ pip install git+https://github.com/yabebalFantaye/MCEvidence
+     
 # Examples
  
 ## To run the evidence estimation from an ipython terminal or notebook
