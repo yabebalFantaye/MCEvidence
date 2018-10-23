@@ -188,7 +188,8 @@ class SamplesMIXIN(object):
         #        
         #store labels of original chain
         self.nchains = nchains
-
+        self.logger.debug('Chain2Sample: nchain=%s'%nchains)
+        
         self.ichain=np.concatenate([(i+1)*np.ones(len(c)) for i, c in enumerate(self.chains)])
         #
         #before concatnating do burn-in
@@ -560,8 +561,9 @@ class MCSamples(SamplesMIXIN):
         return chains
         
     def load_from_file(self,fname,**kwargs):
-        self.logger.debug('''Loading file assuming CosmoMC columns order: 
-                           weight loglike param1 param2 ...''')
+        
+        f = 'weight loglike param1 param2 ...'
+        self.logger.debug('Loading file assuming CosmoMC columns order: '+f)
         
         #fname can be (a list of) string filename, or filename with wildcard
         #to handle those possibilities, we use try..except case
@@ -571,8 +573,11 @@ class MCSamples(SamplesMIXIN):
                 flist=[fname]
             else:
                 flist=fname
-            #load files
-            self.chains=self.read_list_to_array(flist)
+
+            #if not file assume 
+            if not os.path.isfile(flist[0]):
+                raise
+            
         except:
             #get file names from matching pattern
             if '*' in fname or '?' in fname:
@@ -584,10 +589,15 @@ class MCSamples(SamplesMIXIN):
                 else:                    
                     idpattern=kwargs.pop('idpattern', '_*.txt')
                     self.logger.info(' loading files: '+fname+idpattern)                    
-                    flist=glob.glob(fname)                
-                
+                    flist=glob.glob(fname+idpattern)                
+
+        try:                    
             #load files
+            self.logger.debug('Reading from files: ' + ', '.join(flist))            
             self.chains=self.read_list_to_array(flist)
+        except:
+            print('Can not read chain from the following list of files: ',flist)
+            raise 
             #
         return self.chains2samples(**kwargs)
             
@@ -753,7 +763,8 @@ class MCEvidence(object):
         #after burn-in and thinning
         self.nsample = [self.gd.get_shape(name=s)[0] for s in self.snames]
         if ndim is None: ndim=self.gd.nparamMC        
-        self.ndim=ndim        
+        self.ndim=ndim
+        self.logger.debug('using ndim=%s'%ndim)
         #
         self.info['NparamsCosmo']=self.ndim
         self.info['Nsamples']=', '.join([str(x) for x in self.nsample])
@@ -843,6 +854,7 @@ class MCEvidence(object):
         if s is None:
             self.logger.info('Estimating covariance matrix using all chains')            
             s,lnp,w=self.gd.all_sample_arrays()
+            s = s[:,0:self.ndim]
             
         self.logger.info('covariance matrix estimated using nsample=%s'%len(s))
         
@@ -883,10 +895,11 @@ class MCEvidence(object):
             idx=np.arange(istart,nsamples+istart)
                 
         s,lnp,w=self.gd.arrays(name)
+        s = s[:,0:self.ndim]
         
         #if nsamples is 0, return everything         
         if nsamples>0:        
-            s,lnp,w = s[idx,0:self.ndim],lnp[idx],w[idx]
+            s,lnp,w = s[idx,:],lnp[idx],w[idx]
         else:
             nsamples=ntot
 
@@ -1009,7 +1022,7 @@ class MCEvidence(object):
         
         MLE = np.zeros((self.nbatch,kmax))
 
-        print('covtype=',covtype)
+        self.logger.log('covtype=%s'%covtype)
         if covtype is None:
             covtype=self.covtype
             
@@ -1192,15 +1205,17 @@ def params_info(fname,cosmo=False, volumes={}):
     from CosmoMC *.ranges or montepython log.param file
     '''
     
-    #CosmoMC
+    parMC={'name':[],'min':[],'max':[],'range':[]}
+    nr_of_cosmo_params = 0
+    
+    #CosmoMC    
     if glob.glob('{}*.ranges'.format(fname)):
         logger.info('getting params info from COSMOMC file %s.ranges'%fname)
         par=np.genfromtxt(fname+'.ranges',dtype=None,names=('name','min','max'))#,unpack=True)
         parName=par['name']
         parMin=par['min']
         parMax=par['max']
-      
-        parMC={'name':[],'min':[],'max':[],'range':[]}
+        
         for p,pmin,pmax in zip(parName, parMin,parMax):
           #if parameter info is to be computed only for cosmological parameters
           pcond=iscosmo_param(p) if cosmo else True
@@ -1210,12 +1225,13 @@ def params_info(fname,cosmo=False, volumes={}):
               parMC['min'].append(pmin)
               parMC['max'].append(pmax)
               parMC['range'].append(np.abs(pmax-pmin))
-             
+              nr_of_cosmo_params += 1
+
+   #MontePython
     elif glob.glob('{}/log.param'.format(fname)):
+        
         logger.info('getting params info from montepython log.params file')
-        nr_of_cosmo_params = 0
         with open('{}/log.param'.format(fname), 'r') as param:
-            parMC={'name':[],'min':[],'max':[],'range':[]}
             for line in param:
                 if line.find('#') == -1:
                     if line.find('data.parameters') != -1:
@@ -1251,6 +1267,72 @@ def params_info(fname,cosmo=False, volumes={}):
     
     return parMC
 
+
+def query_yes_no(question, default="yes"):
+    """Ask a yes/no question via raw_input() and return their answer.
+
+    "question" is a string that is presented to the user.
+    "default" is the presumed answer if the user just hits <Enter>.
+        It must be "yes" (the default), "no" or None (meaning
+        an answer is required of the user).
+
+    The "answer" return value is True for "yes" or False for "no".
+    """
+    valid = {"yes": True, "y": True, "ye": True,
+             "no": False, "n": False}
+    if default is None:
+        prompt = " [y/n] "
+    elif default == "yes":
+        prompt = " [Y/n] "
+    elif default == "no":
+        prompt = " [y/N] "
+    else:
+        raise ValueError("invalid default answer: '%s'" % default)
+
+    while True:
+        sys.stdout.write(question + prompt)
+        try:
+            choice = raw_input().lower() #python 2.X
+        except:
+                choice = input().lower() #python 3.X
+                
+        if default is not None and choice == '':
+            return valid[default]
+        elif choice in valid:
+            return valid[choice]
+        else:
+            sys.stdout.write("Please respond with 'yes' or 'no' "
+                             "(or 'y' or 'n').\n")
+
+
+def get_prior_volume(args, **kwargs):
+    #compute prior volume or set it to unity
+    try:
+        parMC=params_info(args.root_name, **kwargs)
+        if args.verbose>1: print(parMC)
+        prior_volume=parMC['volume']
+        args.ndim = parMC['ndim']
+        logger.info('getting prior volume using cosmomc *.ranges or montepython log.param outputs')
+        logger.info('prior_volume=%s'%prior_volume)        
+        logger.info('Number of params to use: ndim=%s'%parMC['ndim'])
+        
+    except:
+
+        if args.priorvolume == 1:        
+            logger.info('''Error in reading cosmomc *.ranges or montepython log.param files. 
+These files are needed to compute prior volume''')
+            logger.info('''If you choose to proceed with prior_volume=1, 
+using the estimated evidence for model comparison will be incrporate the prior ratio''')
+
+            if query_yes_no("Do you want to proceed by setting prior_volume=1?", default='yes'):
+                print('setting prior_volume=1')
+                prior_volume=1
+            else:
+                raise
+        else:
+            prior_volume = args.priorvolume
+        
+    return prior_volume
 #==============================================
 
 if __name__ == '__main__':
@@ -1305,22 +1387,46 @@ if __name__ == '__main__':
                         type=int,
                         help="Increase output verbosity: 0: WARNNINGS, 1: INFO, 2: DEBUG, >2: EVERYTHING")
 
-    parser.add_argument('--cosmo', help='flag to compute prior_volume using cosmological parameters only',
+    parser.add_argument("--pv", "--pvolume",
+                        dest="priorvolume",
+                        default=1,
+                        type=float,
+                        help='prior volume to use. If *.range exist, prior_volume estimated internally is used.')
+    
+    parser.add_argument('--allparams', help='flag to use all params and not use iscosmo_params condition',
                         action='store_true')
 
+    desc = '''        
+          Cross EVIDENCE IS COMPUTED USING TWO INDEPENDENT CHAINS. THIS MEANS
+          NEAREST NEIGHBOUR OF POINT "A" IN AN MCMC SAMPLE MC1 IS SEARCHED IN MCMC SAMPLE MC2.
+          THE ERROR ON THE EVIDENCE FROM (AUTO) EVIDENCE IS LARGER THAN THE CROSS EVIDENCE BY ~SQRT(2)
+          OWING TO:
+              if the nearest neighbour of A is B, then the NN to B is LIKELY to be A
+          '''
+    
+    parser.add_argument('--cross', help='''flag to split chain (s) to estimate cross Evidence. 
+                                                      Otherwise auto Evidence is calculated. ''' + desc,
+                        action='store_true')
+    
     args = parser.parse_args()
-
+    
+    #get prior volume
+    cosmo = not args.allparams
+    prior_volume = get_prior_volume(args,cosmo=cosmo)
+        
+    
     #-----------------------------
     #------ control parameters----
     #-----------------------------
-    method=args.root_name
+    method=args.root_name    
     kmax=args.kmax
     idchain=args.idchain 
     ndim=args.ndim
     burnlen=args.burnlen
     thinlen=args.thinlen
     verbose=args.verbose
-
+    split = args.cross
+    
     logger = logging.getLogger(__name__)
     
     if verbose>1:
@@ -1328,22 +1434,16 @@ if __name__ == '__main__':
     if verbose==1:
         logger.setLevel(logging.INFO)
     if verbose==0:
-        logger.setLevel(logging.WARNNING)   
-    try:
-        parMC=params_info(method,cosmo=args.verbose)
-        if verbose>1: print(parMC)
-        prior_volume=parMC['volume']
-        logger.info('getting prior volume using cosmomc *.ranges or montepython log.param outputs')
-        logger.info('prior_volume=%s'%prior_volume)        
-    except:
-        raise
-        #print('setting prior_volume=1')
-        #prior_volume=1
+        logger.setLevel(logging.WARNNING)
+
+        
+    
     print()
     print('Using file: ',method)    
-    mce=MCEvidence(method,ndim=ndim,priorvolume=prior_volume,idchain=idchain,
-                                    kmax=kmax,verbose=verbose,burnlen=burnlen,
-                                    thinlen=thinlen)
+    mce=MCEvidence(method,split=split, ndim=ndim,priorvolume=prior_volume,
+                       idchain=idchain,
+                       kmax=kmax,verbose=verbose,burnlen=burnlen,
+                       thinlen=thinlen)
     mce.evidence()
 
     print('* ln(B)[k] is the natural logarithm of the Baysian evidence estimated using the kth Nearest Neighbour.')
