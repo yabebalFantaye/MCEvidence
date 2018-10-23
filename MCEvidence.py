@@ -80,6 +80,11 @@ Marginal Likelihoods from Monte Carlo Markov Chains
 https://arxiv.org/abs/1704.03472
 ''' 
 
+#list of cosmology parameters
+cosmo_params_list=['omegabh2','omegach2','theta','tau','omegak','mnu','meffsterile','w','wa',
+                       'nnu','yhe','alpha1','deltazrei','Alens','Alensf','fdm','logA','ns','nrun',
+                       'nrunrun','r','nt','ntrun','Aphiphi']
+
 #np.random.seed(1)
 
 # Create a base class
@@ -1022,7 +1027,7 @@ class MCEvidence(object):
         
         MLE = np.zeros((self.nbatch,kmax))
 
-        self.logger.log('covtype=%s'%covtype)
+        self.logger.debug('covtype=%s'%covtype)
         if covtype is None:
             covtype=self.covtype
             
@@ -1191,13 +1196,11 @@ def extract_dict(line):
 def iscosmo_param(p,cosmo_params=None):
     '''
     check if parameter 'p' is cosmological or nuisance
-    '''
-    if cosmo_params is None:
-        #list of cosmology parameters
-        cosmo_params=['omegabh2','omegach2','theta','tau','omegak','mnu','meffsterile','w','wa',
-                      'nnu','yhe','alpha1','deltazrei','Alens','Alensf','fdm','logA','ns','nrun',
-                      'nrunrun','r','nt','ntrun','Aphiphi']        
-    return p in cosmo_params
+    '''        
+    if not cosmo_params is None:
+        cosmo_params_list.extend(cosmo_params)
+        
+    return p in cosmo_params_list
 
 def params_info(fname,cosmo=False, volumes={}):
     '''
@@ -1319,7 +1322,6 @@ def get_prior_volume(args, **kwargs):
         logger.info('Number of params to use: ndim=%s'%parMC['ndim'])
         
     except:
-
         if args.priorvolume == 1:        
             logger.info('''Error in reading cosmomc *.ranges or montepython log.param files. 
 These files are needed to compute prior volume''')
@@ -1369,11 +1371,16 @@ if __name__ == '__main__':
                         default=None,
                         type=int,                    
                         help="How many parameters to use (default=None - use all params) ")
+    parser.add_argument("--paramsfile",
+                        dest="paramsfile",
+                        default="",
+                        type=str,                    
+                        help="text file name containing additional parameter names to consider as cosmological parameters")
     parser.add_argument("--burn","--burnlen",
                         dest="burnlen",
                         default=0,
                         type=float,                    
-                        help="Burn-in length or fraction. burnlen<1 is interpreted as fraction e.g. 0.3 - 30%%")
+                        help="Burn-in length or fraction. burnlen<1 is interpreted as fraction e.g. 0.3 - 30%%")    
     parser.add_argument("--thin", "--thinlen",
                         dest="thinlen",
                         default=0,
@@ -1411,7 +1418,20 @@ if __name__ == '__main__':
                         action='store_true')
     
     args = parser.parse_args()
-    
+
+    newCosmoParams=[]
+    if args.paramsfile!="":
+        with open(args.paramsfile,'r') as fp:
+            for line in fp:
+                if line.find('#') == -1:            
+                    newCosmoParams.append(line)
+        
+        #add new parameter names
+        print('Adding additional parameter names to cosmo_params list from %s..'%args.paramsfile)
+        cosmo_params_list.append(newCosmoParams)
+        #get unique name
+        cosmo_params_list = list(set(cosmo_params_list))
+        
     #get prior volume
     cosmo = not args.allparams
     prior_volume = get_prior_volume(args,cosmo=cosmo)
@@ -1436,7 +1456,7 @@ if __name__ == '__main__':
     if verbose==1:
         logger.setLevel(logging.INFO)
     if verbose==0:
-        logger.setLevel(logging.WARNNING)
+        logger.setLevel(logging.WARNING)
 
         
     

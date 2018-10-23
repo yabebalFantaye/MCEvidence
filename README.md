@@ -57,7 +57,7 @@ The output is:
                         *_1.txt (default=None - use all available)
        -np NDIM, --ndim NDIM
                         How many parameters to use (default=None - use all
-                        params)
+                        params)             
        -b BURNFRAC, --burnfrac BURNFRAC, --burnin BURNFRAC, --remove BURNFRAC
                         Burn-in fraction
        -t THINFRAC, --thin THINFRAC, --thinfrac THINFRAC
@@ -66,6 +66,8 @@ The output is:
                         Verbosity of the code while running: The mapping between verbose number
                         and the logging module levels are: 0: WARNNING, 1: INFO, 2: DEBUG
                         setting verbose>2 outputs EVERYTHING
+       --paramsfile
+                        text file name that contains additional parameter names to be consider as cosmological parameters
        --allparams              
               	        Flag to consider all parameters - prior_volume is computed using all parameters. By default only 
                         cosmological parameters listed in iscosmo_params function is considered.
