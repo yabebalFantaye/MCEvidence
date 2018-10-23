@@ -66,9 +66,23 @@ The output is:
                         Verbosity of the code while running: The mapping between verbose number
                         and the logging module levels are: 0: WARNNING, 1: INFO, 2: DEBUG
                         setting verbose>2 outputs EVERYTHING
-       --cosmo              
-              	        Flag to compute prior_volume using cosmological
-                        parameters only 
+       --allparams              
+              	        Flag to consider all parameters - prior_volume is computed using all parameters. By default only 
+                        cosmological parameters listed in iscosmo_params function is considered.
+                        For arbitrary parameter names, please modify the code accordingly.
+                        If allparams is passed, consider using ndim<20 to get resonable evidence estimation.
+
+       -np, --pvolume PRIORVOLUME
+                        The prior volume to use if it can not be computed internally using cosmomc *.ranges or
+                        montepython log.params files.
+
+       --cross
+                        Flag to split chain (s) into two sets to estimate cross Evidence. The DEFAULT is auto Evidence.
+                        Cross EVIDENCE is computed using two independent chains. This means Nearest Neighbour of
+                        a point  "A" in MCMC sample MC1 is searched in MCMC sample MC2.
+                        THE ERROR ON THE EVIDENCE FROM (AUTO) EVIDENCE IS LARGER THAN THE CROSS EVIDENCE BY ~SQRT(2).
+                        This is the result of : if the nearest neighbour of A is B, then the NN to B is LIKELY to be A.
+
 
 # If you use the code, please cite the following paper
 
