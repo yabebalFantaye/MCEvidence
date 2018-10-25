@@ -1210,7 +1210,6 @@ def params_info(fname,cosmo=False, volumes={}):
     
     parMC={'name':[],'min':[],'max':[],'range':[]}
     nr_of_cosmo_params = 0
-    
     #CosmoMC    
     if glob.glob('{}*.ranges'.format(fname)):
         
@@ -1245,10 +1244,11 @@ def params_info(fname,cosmo=False, volumes={}):
                             nr_of_cosmo_params += 1
                             if array[1] == 'None' or array[2] == 'None':
                                 raise Exception('Unbounded priors are not supported - please specify priors')
+                            vmin=float(array[1]); vmax=float(array[2])
                             parMC['name'].append(name)
-                            parMC['min'].append(array[1])
-                            parMC['max'].append(array[2])
-                            parMC['range'].append(array[2] - array[1])
+                            parMC['min'].append(vmin)
+                            parMC['max'].append(vmax)
+                            parMC['range'].append(vmax - vmin)
                         # if name in volumes:
                         #     parMC['name'].append(name)
                         #     parMC['range'].append(volumes[name])
@@ -1256,11 +1256,11 @@ def params_info(fname,cosmo=False, volumes={}):
                         #     raise Exception('''Unbounded priors are not 
                         #            supported but prior for {} is not bound - 
                         #            please specify priors'''.format(name))
-                        else:
-                            parMC['name'].append(name)
-                            parMC['min'].append(array[1])
-                            parMC['max'].append(array[2])
-                            parMC['range'].append(array[2] - array[1])
+                        # else:
+                        #     parMC['name'].append(name)
+                        #     parMC['min'].append(array[1])
+                        #     parMC['max'].append(array[2])
+                        #     parMC['range'].append(array[2] - array[1])
     else:
         raise Exception('Could not read parameter volume from COSMOMC .ranges file or montepython log.param file')
     #
@@ -1312,7 +1312,7 @@ def query_yes_no(question, default="yes"):
 
 def get_prior_volume(args, **kwargs):
     #compute prior volume or set it to unity
-    try:
+    try:        
         parMC=params_info(args.root_name, **kwargs)
         if args.verbose>1: print(parMC)
         prior_volume=parMC['volume']
@@ -1322,7 +1322,8 @@ def get_prior_volume(args, **kwargs):
         logger.info('Number of params to use: ndim=%s'%parMC['ndim'])
         
     except:
-        if args.priorvolume == 1:        
+        raise
+        if args.priorvolume == None:        
             logger.info('''Error in reading cosmomc *.ranges or montepython log.param files. 
 These files are needed to compute prior volume''')
             logger.info('''If you choose to proceed with prior_volume=1, 
@@ -1398,7 +1399,7 @@ if __name__ == '__main__':
 
     parser.add_argument("-pv", "--pvolume",
                         dest="priorvolume",
-                        default=1,
+                        default=None,
                         type=float,
                         help='prior volume to use. If *.range exist, prior_volume estimated internally is used.')
     
@@ -1422,13 +1423,15 @@ if __name__ == '__main__':
     newCosmoParams=[]
     if args.paramsfile!="":
         with open(args.paramsfile,'r') as fp:
-            for line in fp:
-                if line.find('#') == -1:            
+            for OneLine in fp:
+                line = OneLine.strip()
+                if line!="" and line.find('#') == -1:            
                     newCosmoParams.append(line)
         
         #add new parameter names
         print('Adding additional parameter names to cosmo_params list from %s..'%args.paramsfile)
-        cosmo_params_list.append(newCosmoParams)
+        print('adding the following names:',newCosmoParams)
+        cosmo_params_list.extend(newCosmoParams)
         #get unique name
         cosmo_params_list = list(set(cosmo_params_list))
         
