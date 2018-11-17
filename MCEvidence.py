@@ -186,7 +186,6 @@ class SamplesMIXIN(object):
             self.logger.error('The chains array is empty!')
             raise
         #
-        print('chains2samples kwargs; ',kwargs.keys())
         burnlen = kwargs.pop('burnlen',0)
         thinlen = kwargs.pop('thinlen',0)        
         nchains=len(self.chains)
@@ -592,7 +591,7 @@ class MCSamples(SamplesMIXIN):
                 if idchain>0:
                     flist=[fname+'_{}.txt'.format(idchain)]
                 else:                    
-                    idpattern=kwargs.pop('idpattern', '_*.txt')
+                    idpattern=kwargs.pop('idpattern', '_?.txt')
                     self.logger.info(' loading files: '+fname+idpattern)                    
                     flist=glob.glob(fname+idpattern)                
 
@@ -1438,7 +1437,6 @@ if __name__ == '__main__':
     #get prior volume
     cosmo = not args.allparams
     prior_volume = get_prior_volume(args,cosmo=cosmo)
-        
     
     #-----------------------------
     #------ control parameters----
