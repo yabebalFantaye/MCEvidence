@@ -1216,7 +1216,7 @@ def params_info(fname,cosmo=False, volumes={}):
         par=np.genfromtxt(fname+'.ranges',dtype=None,names=('name','min','max'))#,unpack=True)
         parName=par['name']
         parMin=par['min']
-        parMax=par['max']
+        parMax=[float(p) if p != "N" else np.Infinity for p in par['max']]
         
         for p,pmin,pmax in zip(parName, parMin,parMax):
           #if parameter info is to be computed only for cosmological parameters
